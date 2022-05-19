@@ -9,44 +9,47 @@ exec &>> /var/log/bash-cni-plugin.log
 echo "CNI command: $CNI_COMMAND"
 
 stdin=`cat /dev/stdin`
-echo "stdin: $stdin"
 
+tmpfile="/tmp/cidr-filtering-cni-$(tr -dc 'A-F0-9' < /dev/urandom | head -c4)"
 
+pid=$(lsns -t net | grep ${CNI_NETNS} | awk '{ print $4 }')
 
 case $CNI_COMMAND in
 ADD)
-    echo $stdin
-	network=$(echo "$stdin" | jq -r ".network")
-	subnet=$(echo "$stdin" | jq -r ".subnet")
-	
-    echo "CNI_NETNS: $CNI_NETNS"
-	echo "CNI_IFNAME: $CNI_IFNAME"
-    echo "CNI_CONTAINERID: $CNI_CONTAINERID"
 
-    exit 0
+    echo "CNI_NETNS: $CNI_NETNS" >> $tmpfile
+	echo "CNI_IFNAME: $CNI_IFNAME" >> $tmpfile
+    echo "CNI_CONTAINERID: $CNI_CONTAINERID" >> $tmpfile
+    
+    
+    mkdir -p /var/run/netns/
+    ln -sf "$CNI_NETNS" /var/run/netns/"$CNI_CONTAINERID"
+    
+    ip netns exec $CNI_CONTAINERID ip a >> $tmpfile 
+    
+    # echo empty response, since we haven't changed interfaces/routes
+    echo "{
+  \"cniVersion\": \"$(jq -r ".cniVersion" <<< "$stdin")\"
+}" >&3
 ;;
 
 DEL)
-	echo "DELETE"
+	echo "DELETE" >> $tmpfile
     exit 0
 ;;
 
 GET)
-	echo "GET not supported"
+	echo "GET not supported" >> $tmpfile
 	exit 1
 ;;
 
 VERSION)
-    echo '{
-"cniVersion": "0.3.1", 
-  "supportedVersions": [ "0.3.0", "0.3.1", "0.4.0" ] 
-}' >&3
+    echo '{"cniVersion":"0.3.1","supportedVersions":["0.1.0","0.2.0","0.3.0","0.3.1"]}' >&3
     exit 0
-
 ;;
 
 *)
-  echo "Unknown cni command: $CNI_COMMAND" 
+  echo "Unknown cni command: $CNI_COMMAND" >> $tmpfile 
   exit 1
 ;;
 
