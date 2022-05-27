@@ -1,0 +1,66 @@
+apiVersion: "k8s.cni.cncf.io/v1"
+kind: NetworkAttachmentDefinition
+metadata:
+  name: a-bridge-network
+spec:
+  config: '{
+    "cniVersion": "0.3.1",
+    "name": "nad-bridge-cidr",
+    "plugins": [
+      {
+        "type": "cnv-bridge",
+        "bridge": "br1"
+      },
+      {
+        "type": "cidr-filtering-cni",
+        "ingress": [
+          {
+            "ip": "10.0.0.0",
+            "prefix-length": "24"
+          }
+        ],
+        "egress": [
+          {
+            "ip": "64.0.0.0",
+            "prefix-length": "8"
+          },
+          {
+            "ip": "66.0.0.0",
+            "prefix-length": "8"
+          },
+          {
+            "ip": "72.0.0.0",
+            "prefix-length": "8"
+          },
+          {
+            "ip": "74.0.0.0",
+            "prefix-length": "8"
+          },
+          {
+            "ip": "108.0.0.0",
+            "prefix-length": "8"
+          },
+          {
+            "ip": "172.0.0.0",
+            "prefix-length": "8"
+          },
+          {
+            "ip": "173.0.0.0",
+            "prefix-length": "8"
+          },
+          {
+            "ip": "207.0.0.0",
+            "prefix-length": "8"
+          },
+          {
+            "ip": "209.0.0.0",
+            "prefix-length": "8"
+          },
+          {
+            "ip": "216.0.0.0",
+            "prefix-length": "8"
+          }
+        ]
+      }
+    ]
+  }'
