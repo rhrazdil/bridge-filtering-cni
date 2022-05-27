@@ -76,4 +76,5 @@ vendor: $(GO)
 	cluster-sync \
 	cluster-up \
 	build \
+	image-push \
 	vendor \
