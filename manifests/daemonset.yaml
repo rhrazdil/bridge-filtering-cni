@@ -1,3 +1,36 @@
+---
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: cidr-filtering
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - configmaps
+    verbs:
+      - get
+      - list
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: cidr-filtering
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cidr-filtering
+subjects:
+- kind: ServiceAccount
+  name: cidr-filtering
+  namespace: kube-system
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: cidr-filtering
+  namespace: kube-system
+---
 apiVersion: apps/v1
 kind: DaemonSet
 metadata:
@@ -25,17 +58,17 @@ spec:
         effect: NoSchedule
       - operator: Exists
         effect: NoExecute
-      containers:
-      - name: cidr-filtering-cni
-        image: quay.io/rhrazdil/cidr-filtering-cni:latest
-        command: ["/entrypoint.sh"]
-        resources:
-          requests:
-            cpu: "10m"
-            memory: "25Mi"
-          limits:
-            cpu: "10m"
-            memory: "25Mi"
+      serviceAccountName: cidr-filtering
+      initContainers:
+      - name: cidr-filtering-cni-copier
+        image: registry.access.redhat.com/ubi8/ubi:8.6-754
+        env:
+        - name: CNI_NAME
+          value: cidr-filtering-cni
+        - name: CNI_CONF_DIR
+          value: "/host/etc/cni/net.d"
+        - name: SCRIPT
+          value: "IyEvYmluL2Jhc2gKCnNldCAtZQpzZXQgLW8gcGlwZWZhaWwKCnN0ZGluPSQoY2F0IC9kZXYvc3RkaW4pCmxvZ0ZpbGU9Ii92YXIvbG9nL2NpZHItZmlsdGVyaW5nLWNuaS5sb2ciCgpleGVjIDM+JjEKZXhlYyAyPj4gJGxvZ0ZpbGUKCk5GVF9UQUJMRV9ORVRERVY9bmV0ZGV2Ck5GVF9UQUJMRV9CUklER0U9YnJpZGdlCk5GVF9UQUJMRT1maWx0ZXIKCk5GVF9JTkdSRVNTX0NIQUlOPWluZ3Jlc3MKTkZUX0lOR1JFU1NfSE9PSz1pbmdyZXNzCgpORlRfUE9TVFJPVVRJTkdfQ0hBSU49cG9zdHJvdXRpbmcKTkZUX0VHUkVTU19IT09LPXBvc3Ryb3V0aW5nCgpnZXRfb2JqZWN0KCkgewogICAgbG9jYWwganNvbl9vYmplY3Q9IiQxIgogICAgbG9jYWwganNvbl9wYXRoPSIkMiIKICAgIGVjaG8gIiRqc29uX29iamVjdCIgfCBqcSAtYyAiJGpzb25fcGF0aCIKfQoKZ2V0X2FycmF5X2l0ZW1zKCkgewogICAgbG9jYWwganNvbl9vYmplY3Q9IiQxIgogICAgbG9jYWwganNvbl9wYXRoPSIkMiIKICAgIGVjaG8gIiRqc29uX29iamVjdCIgfCBqcSAtYyAkanNvbl9wYXRoIHwganEgLWMgIi5bXSIKfQoKZ2V0X2FycmF5X2xlbigpIHsKICAgIGxvY2FsIGpzb25fb2JqZWN0PSIkMSIKICAgIGxvY2FsIGpzb25fcGF0aD0iJDIiCiAgICBlY2hvICIkanNvbl9vYmplY3QiIHwganEgLWMgIiRqc29uX3BhdGgiIHwganEgIi4gfCBsZW5ndGgiCn0KCmZvcl9qc29uX2FycmF5KCkgewogICAgbG9jYWwganNvbl9vYmplY3Q9IiQxIgogICAgbG9jYWwganNvbl9wYXRoPSIkMiIKICAgIGxvY2FsIGY9IiQzIgogICAgc2V0IC0tICIke0A6NH0iCiAgICBmb3IgaXRlbSBpbiAkKGdldF9hcnJheV9pdGVtcyAiJGpzb25fb2JqZWN0IiAiJGpzb25fcGF0aCIpOyBkbwogICAgICAgICRmICRpdGVtICRACiAgICBkb25lCn0KCmdldF9pcF92ZXJzaW9uKCkgewogICAgbG9jYWwgaXBfYWRkcmVzcz0iJDEiCiAgICBpZiBbWyAiJGlwX2FkZHJlc3MiID1+IC4qOi4qIF1dCiAgICB0aGVuCiAgICAgICAgZWNobyAiaXA2IgogICAgZWxzZQogICAgICAgIGVjaG8gImlwIgogICAgZmkKfQoKY3JlYXRlX3RhYmxlKCkgewogICAgbG9jYWwgdHlwZT0iJDEiCiAgICBsb2NhbCBuYW1lPSIkMiIKICAgIGVjaG8gIm5mdCBhZGQgdGFibGUgJHR5cGUgJG5hbWUiIHwgdGVlIC1hICRsb2dGaWxlCn0KCmNyZWF0ZV9uZXRkZXZfYmFzZV9jaGFpbigpIHsKICAgIGxvY2FsIHR5cGU9IiQxIgogICAgbG9jYWwgbmFtZT0iJDIiCiAgICBsb2NhbCBjaGFpbj0iJDMiCiAgICBsb2NhbCBob29rPSIkNCIKICAgIGxvY2FsIGRldmljZT0iJDUiCiAgICBlY2hvICJuZnQgYWRkIGNoYWluICR0eXBlICRuYW1lICRjaGFpbiB7IHR5cGUgZmlsdGVyIGhvb2sgJGhvb2sgZGV2aWNlICRkZXZpY2UgcHJpb3JpdHkgMDsgcG9saWN5IGFjY2VwdDsgfSIgfCB0ZWUgLWEgJGxvZ0ZpbGUKfQoKY3JlYXRlX2Jhc2VfY2hhaW4oKSB7CiAgICBsb2NhbCB0eXBlPSIkMSIKICAgIGxvY2FsIG5hbWU9IiQyIgogICAgbG9jYWwgY2hhaW49IiQzIgogICAgbG9jYWwgaG9vaz0iJDQiCiAgICBlY2hvICJuZnQgYWRkIGNoYWluICR0eXBlICRuYW1lICRjaGFpbiB7IHR5cGUgZmlsdGVyIGhvb2sgJGhvb2sgcHJpb3JpdHkgMDsgcG9saWN5IGFjY2VwdDsgfSIgfCB0ZWUgLWEgJGxvZ0ZpbGUKfQoKY3JlYXRlX2NoYWluKCkgewogICAgbG9jYWwgdHlwZT0iJDEiCiAgICBsb2NhbCBuYW1lPSIkMiIKICAgIGxvY2FsIGNoYWluPSIkMyIKICAgIGVjaG8gIm5mdCBhZGQgY2hhaW4gJHR5cGUgJG5hbWUgJGNoYWluIiB8IHRlZSAtYSAkbG9nRmlsZQp9CgpuZnRfYWRkX3J1bGUoKSB7CiAgICBsb2NhbCB0eXBlPSIkMSIKICAgIGxvY2FsIHRhYmxlPSIkMiIKICAgIGxvY2FsIGNoYWluPSIkMyIKICAgIHNldCAtLSAiJHtAOjR9IgogICAgZWNobyAibmZ0IGFkZCBydWxlICR0eXBlICR0YWJsZSAkY2hhaW4gJEAiIHwgdGVlIC1hICRsb2dGaWxlCn0KCmNyZWF0ZV9ydWxlc19mb3JfZmlsdGVyaW5nKCkgewogICAgbG9jYWwgcG9saWN5X2lkPSIkMSIKICAgIGxvY2FsIHRhYmxlX3R5cGU9IiQyIgogICAgbG9jYWwgZGlyZWN0aW9uPSIkMyIKICAgIGxvY2FsIG1hdGNoX2lmYWNlPSIkNCIKICAgIAogICAgbG9jYWwgbWF0Y2hfYWRkcj0ic2FkZHIiCiAgICBpZiBbWyAiJGRpcmVjdGlvbiIgPT0gImVncmVzcyIgXV07IHRoZW4KICAgICAgICBsb2NhbCBtYXRjaF9hZGRyPSJkYWRkciIKICAgIGZpCiAgICAKICAgIF9jcmVhdGVfc3VibmV0X3J1bGUoKSB7CiAgICAgICAgbG9jYWwgc3VibmV0PSQxCiAgICAgICAgaWYgW1sgIiQoZ2V0X29iamVjdCAiJHtzdWJuZXR9IiAiLnN1Ym5ldC5leGNlcHQiKSIgIT0gIm51bGwiIF1dOyB0aGVuCiAgICAgICAgICAgIGZvcl9qc29uX2FycmF5ICIke3N1Ym5ldH0iICIuc3VibmV0LmV4Y2VwdCIgX2Ryb3BfaXAKICAgICAgICBmaQoKICAgICAgICBpZiBbWyAiJChnZXRfb2JqZWN0ICIke3N1Ym5ldH0iICIuc3VibmV0LmNpZHIiKSIgPT0gIm51bGwiIF1dOyB0aGVuCiAgICAgICAgICAgIGV4aXRXaXRoRXJyb3IgImNpZHIgbXVzdCBiZSBzcGVjaWZpZWQuIgogICAgICAgIGZpCiAgICAgICAgX2FjY2VwdF9jaWRyICIke3N1Ym5ldH0iCiAgICB9CgogICAgX2Ryb3BfaXAoKSB7CiAgICAgICAgbG9jYWwgaXA9IiQxIgogICAgICAgIGlwIG5ldG5zIGV4ZWMgIiRDTklfQ09OVEFJTkVSSUQiICQobmZ0X2FkZF9ydWxlICR7dGFibGVfdHlwZX0gJHtORlRfVEFCTEV9IG0tJHtwb2xpY3lfaWR9LSR7ZGlyZWN0aW9ufS1zdWJuZXRzICR7bWF0Y2hfaWZhY2V9ICRDTklfSUZOQU1FICQoZ2V0X2lwX3ZlcnNpb24gIiR7aXB9IikgJHttYXRjaF9hZGRyfSAke2lwfSBjb3VudGVyIGRyb3ApCiAgICB9CgogICAgX2FjY2VwdF9jaWRyKCkgewogICAgICAgIGxvY2FsIHN1Ym5ldD0iJDEiCiAgICAgICAgbG9jYWwgY2lkcj0kKGVjaG8gIiR7c3VibmV0fSIgfCBqcSAtciAiLnN1Ym5ldC5jaWRyIikKICAgICAgICBpcCBuZXRucyBleGVjICIkQ05JX0NPTlRBSU5FUklEIiAkKG5mdF9hZGRfcnVsZSAke3RhYmxlX3R5cGV9ICR7TkZUX1RBQkxFfSBtLSR7cG9saWN5X2lkfS0ke2RpcmVjdGlvbn0tc3VibmV0cyAke21hdGNoX2lmYWNlfSAkQ05JX0lGTkFNRSAkKGdldF9pcF92ZXJzaW9uICIke2NpZHJ9IikgJHttYXRjaF9hZGRyfSAke2NpZHJ9IGNvdW50ZXIgbWV0YSBtYXJrIHNldCBtYXJrIG9yIDB4MjAwMDApCiAgICB9CgogICAgX2FjY2VwdF9wb3J0KCkgewogICAgICAgIGxvY2FsIHBvcnRzPSIkMSIKICAgICAgICBsb2NhbCBwb3J0PSQoZWNobyAiJHBvcnRzIiB8IGpxIC1yICIucG9ydCIpCiAgICAgICAgbG9jYWwgcHJvdG9jb2w9JChlY2hvICIkcG9ydHMiIHwganEgLXIgIi5wcm90b2NvbCIpCgogICAgICAgIGlmIFtbICIkcG9ydCIgPT0gIm51bGwiIHx8ICIkcHJvdG9jb2wiID09ICJudWxsIiB8fCAiJHBvcnQiID09ICIiIHx8ICIkcHJvdG9jb2wiID09ICIiIF1dOyB0aGVuCiAgICAgICAgICAgIGV4aXRXaXRoRXJyb3IgIlBvcnQgYW5kIHByb3RvY29sIG11c3QgYmUgc3BlY2lmaWVkLiIKICAgICAgICBlbHNlCiAgICAgICAgICAgIGlwIG5ldG5zIGV4ZWMgIiRDTklfQ09OVEFJTkVSSUQiICQobmZ0X2FkZF9ydWxlICR7dGFibGVfdHlwZX0gJHtORlRfVEFCTEV9IG0tJHtwb2xpY3lfaWR9LSR7ZGlyZWN0aW9ufS1wb3J0cyAke21hdGNoX2lmYWNlfSAkQ05JX0lGTkFNRSAke3Byb3RvY29sLCx9IGRwb3J0ICR7cG9ydH0gY291bnRlciBtZXRhIG1hcmsgc2V0IG1ldGEgbWFyayAifCIgMHgwMDAxMDAwMCkKICAgICAgICBmaQogICAgfQoKICAgICMgaGFuZGxlIGlwIGJsb2NrCiAgICBpZiBbWyAkKGVjaG8gIiRzdGRpbiIgfCBqcSAtciAiLiR7ZGlyZWN0aW9ufS5zdWJuZXRzIikgIT0gIm51bGwiIF1dOyB0aGVuCiAgICAgICAgZm9yX2pzb25fYXJyYXkgIiRzdGRpbiIgIi4ke2RpcmVjdGlvbn0uc3VibmV0cyIgX2NyZWF0ZV9zdWJuZXRfcnVsZQogICAgZmkKCiAgICAjIGhhbmRsZSBwb3J0cwogICAgaWYgW1sgJChlY2hvICIkc3RkaW4iIHwganEgLXIgIi4ke2RpcmVjdGlvbn0ucG9ydHMiKSAhPSAibnVsbCIgXV07IHRoZW4KICAgICAgICBmb3JfanNvbl9hcnJheSAiJHN0ZGluIiAiLiR7ZGlyZWN0aW9ufS5wb3J0cyIgX2FjY2VwdF9wb3J0CiAgICBmaQp9CgpleGl0V2l0aEVycm9yKCkgewogICAgZWNobyAie1wiY25pVmVyc2lvblwiOiBcIiQoanEgLXIgIi5jbmlWZXJzaW9uIiA8PDwgIiRzdGRpbiIpXCIsXCJtc2dcIjpcIiQxXCIsXCJjb2RlXCI6MSxcImRldGFpbHNcIjpcIiQyXCJ9IiA+JjMKICAgIGV4aXQgMQp9CgpleGl0V2l0aFN1Y2Nlc3MoKSB7CiAgICBwcmV2X3Jlc3VsdD0kKGdldF9vYmplY3QgIiR7c3RkaW59IiAiLnByZXZSZXN1bHQiKQogICAgaWYgW1sgIiRwcmV2X3Jlc3VsdCIgPT0gIm51bGwiIF1dOyB0aGVuCiAgICAgICAgZWNobyAie1wiY25pVmVyc2lvblwiOiBcIiQoanEgLXIgIi5jbmlWZXJzaW9uIiA8PDwgIiRzdGRpbiIpXCJ9IiA+JjMKICAgIGVsc2UKICAgICAgICBlY2hvICIkcHJldl9yZXN1bHQiID4mMwogICAgZmkKICAgIGV4aXQgMAp9CgpjcmVhdGVfY2hhaW5zX2Zvcl9maWx0ZXJpbmcoKSB7CiAgICBsb2NhbCBwb2xpY3lfaWQ9IiQxIgogICAgbG9jYWwgdGFibGVfdHlwZT0iJDIiCiAgICBsb2NhbCBkaXJlY3Rpb249IiQzIgoKICAgIGxvY2FsIG1hdGNoX2lmYWNlPSJpaWZuYW1lIgogICAgaWYgW1sgIiRkaXJlY3Rpb24iID09ICJlZ3Jlc3MiIF1dOyB0aGVuCiAgICAgICAgbG9jYWwgbWF0Y2hfaWZhY2U9Im9pZm5hbWUiCiAgICBmaQoKICAgIGlwIG5ldG5zIGV4ZWMgIiRDTklfQ09OVEFJTkVSSUQiICQoY3JlYXRlX2NoYWluICIke3RhYmxlX3R5cGV9IiAiJHtORlRfVEFCTEV9IiBtLSIke3BvbGljeV9pZH0iLSIke2RpcmVjdGlvbn0iKSB8fCBleGl0V2l0aEVycm9yICJGYWlsZWQgdG8gYWRkIGNoYWluIG0tJHtwb2xpY3lfaWR9LSR7ZGlyZWN0aW9ufSIKICAgIGlwIG5ldG5zIGV4ZWMgIiRDTklfQ09OVEFJTkVSSUQiICQobmZ0X2FkZF9ydWxlICIke3RhYmxlX3R5cGV9IiAiJHtORlRfVEFCTEV9IiBtLSIke2RpcmVjdGlvbn0iICIke21hdGNoX2lmYWNlfSIgIiRDTklfSUZOQU1FIiBjb3VudGVyIGp1bXAgbS0iJHtwb2xpY3lfaWR9Ii0iJHtkaXJlY3Rpb259IikgfHwgZXhpdFdpdGhFcnJvciAiRmFpbGVkIHRvIGFkZCBydWxlOiBqdW1wIG0tJHtwb2xpY3lfaWR9LSR7ZGlyZWN0aW9ufSIKCiAgICBpcCBuZXRucyBleGVjICIkQ05JX0NPTlRBSU5FUklEIiAkKGNyZWF0ZV9jaGFpbiAiJHt0YWJsZV90eXBlfSIgIiR7TkZUX1RBQkxFfSIgbS0iJHtwb2xpY3lfaWR9Ii0iJHtkaXJlY3Rpb259Ii1zdWJuZXRzKSB8fCBleGl0V2l0aEVycm9yICJGYWlsZWQgdG8gYWRkIGNoYWluIG0tIiR7cG9saWN5X2lkfSItIiR7ZGlyZWN0aW9ufSItc3VibmV0cyIKICAgIGlwIG5ldG5zIGV4ZWMgIiRDTklfQ09OVEFJTkVSSUQiICQoY3JlYXRlX2NoYWluICIke3RhYmxlX3R5cGV9IiAiJHtORlRfVEFCTEV9IiBtLSIke3BvbGljeV9pZH0iLSIke2RpcmVjdGlvbn0iLXBvcnRzKSB8fCBleGl0V2l0aEVycm9yICJGYWlsZWQgdG8gYWRkIGNoYWluIG0tIiR7cG9saWN5X2lkfSItIiR7ZGlyZWN0aW9ufSItcG9ydHMiCiAgICAKICAgIGlwIG5ldG5zIGV4ZWMgIiRDTklfQ09OVEFJTkVSSUQiICQobmZ0X2FkZF9ydWxlICIke3RhYmxlX3R5cGV9IiAiJHtORlRfVEFCTEV9IiBtLSIke3BvbGljeV9pZH0iLSIke2RpcmVjdGlvbn0iIGNvdW50ZXIganVtcCBtLSIke3BvbGljeV9pZH0iLSIke2RpcmVjdGlvbn0iLXN1Ym5ldHMpIHx8IGV4aXRXaXRoRXJyb3IgIkZhaWxlZCB0byBhZGQgcnVsZToganVtcCBtLSIke3BvbGljeV9pZH0iLSIke2RpcmVjdGlvbn0iLXN1Ym5ldHMiCiAgICBpcCBuZXRucyBleGVjICIkQ05JX0NPTlRBSU5FUklEIiAkKG5mdF9hZGRfcnVsZSAiJHt0YWJsZV90eXBlfSIgIiR7TkZUX1RBQkxFfSIgbS0iJHtwb2xpY3lfaWR9Ii0iJHtkaXJlY3Rpb259IiBjb3VudGVyIGp1bXAgbS0iJHtwb2xpY3lfaWR9Ii0iJHtkaXJlY3Rpb259Ii1wb3J0cykgfHwgZXhpdFdpdGhFcnJvciAiRmFpbGVkIHRvIGFkZCBydWxlOiBqdW1wIG0tIiR7cG9saWN5X2lkfSItIiR7ZGlyZWN0aW9ufSItcG9ydHMiCgogICAgY3JlYXRlX3J1bGVzX2Zvcl9maWx0ZXJpbmcgIiR7cG9saWN5X2lkfSIgIiR7dGFibGVfdHlwZX0iICIke2RpcmVjdGlvbn0iICIke21hdGNoX2lmYWNlfSIKfQoKY2FzZSAkQ05JX0NPTU1BTkQgaW4KQUREKQogICAgZWNobyAiQ05JX05FVE5TOiAkQ05JX05FVE5TIiA+PiAkbG9nRmlsZQogICAgZWNobyAiQ05JX0NPTlRBSU5FUklEOiAkQ05JX0NPTlRBSU5FUklEIiA+PiAkbG9nRmlsZQogICAgZWNobyAiU1RESU46ICRzdGRpbiIgPj4gJGxvZ0ZpbGUKCiAgICBwb2xpY3lfbmFtZT0kKGVjaG8gIiRzdGRpbiIgfCBqcSAtciAiLm5hbWUiKQogICAgcG9saWN5X2lkPSIkKGVjaG8gIiRwb2xpY3lfbmFtZSIgfCBzaGExc3VtICkiCiAgICBwb2xpY3lfaWQ9IiR7cG9saWN5X2lkOjA6NX0iICMgdXNlIGZpcnN0IDUgY2hhcmFjdGVycyB0byBpZGVudGlmeSBhIHBvbGljeQoKICAgIG1rZGlyIC1wIC92YXIvcnVuL25ldG5zLwogICAgbG4gLXNmVCAiJENOSV9ORVROUyIgL3Zhci9ydW4vbmV0bnMvIiR7Q05JX0NPTlRBSU5FUklEfSIKCiAgICBpcCBuZXRucyBleGVjICIkQ05JX0NPTlRBSU5FUklEIiAkKGNyZWF0ZV90YWJsZSAke05GVF9UQUJMRV9CUklER0V9ICR7TkZUX1RBQkxFfSkgfHwgZXhpdFdpdGhFcnJvciAiRmFpbGVkIHRvIGNyZWF0ZSB0YWJsZSAke05GVF9UQUJMRV9CUklER0V9ICR7TkZUX1RBQkxFfSIKICAgIGlwIG5ldG5zIGV4ZWMgIiRDTklfQ09OVEFJTkVSSUQiICQoY3JlYXRlX3RhYmxlICR7TkZUX1RBQkxFX05FVERFVn0gJHtORlRfVEFCTEV9KSB8fCBleGl0V2l0aEVycm9yICJGYWlsZWQgdG8gY3JlYXRlIHRhYmxlICR7TkZUX1RBQkxFX0JSSURHRX0gJHtORlRfVEFCTEV9IgoKICAgICMgY3JlYXRlIGJhc2UgY2hhaW5zCiAgICBpcCBuZXRucyBleGVjICIkQ05JX0NPTlRBSU5FUklEIiAkKGNyZWF0ZV9uZXRkZXZfYmFzZV9jaGFpbiAke05GVF9UQUJMRV9ORVRERVZ9ICR7TkZUX1RBQkxFfSAke05GVF9JTkdSRVNTX0NIQUlOfSAke05GVF9JTkdSRVNTX0hPT0t9ICR7Q05JX0lGTkFNRX0pIHx8IGV4aXRXaXRoRXJyb3IgIkZhaWxlZCB0byBjcmVhdGUgbmV0ZGV2IGJhc2UgY2hhaW4gJHtORlRfSU5HUkVTU19DSEFJTn0iCiAgICBpcCBuZXRucyBleGVjICIkQ05JX0NPTlRBSU5FUklEIiAkKGNyZWF0ZV9iYXNlX2NoYWluICR7TkZUX1RBQkxFX0JSSURHRX0gJHtORlRfVEFCTEV9ICR7TkZUX1BPU1RST1VUSU5HX0NIQUlOfSAke05GVF9FR1JFU1NfSE9PS30pIHx8IGV4aXRXaXRoRXJyb3IgIkZhaWxlZCB0byBjcmVhdGUgYnJpZGdlIGJhc2UgY2hhaW4gJHtORlRfUE9TVFJPVVRJTkdfQ0hBSU59IgoKICAgICMgZmlsdGVyIGNoYWlucwogICAgaXAgbmV0bnMgZXhlYyAiJENOSV9DT05UQUlORVJJRCIgJChjcmVhdGVfY2hhaW4gJHtORlRfVEFCTEVfTkVUREVWfSAke05GVF9UQUJMRX0gbS1pbmdyZXNzKSB8fCBleGl0V2l0aEVycm9yICJGYWlsZWQgdG8gYWRkIGNoYWluIG0taW5ncmVzcyIKICAgIGlwIG5ldG5zIGV4ZWMgIiRDTklfQ09OVEFJTkVSSUQiICQoY3JlYXRlX2NoYWluICR7TkZUX1RBQkxFX0JSSURHRX0gJHtORlRfVEFCTEV9IG0tZWdyZXNzKSB8fCBleGl0V2l0aEVycm9yICJGYWlsZWQgdG8gYWRkIGNoYWluIG0tZWdyZXNzIgoKICAgICMgc2V0dXAgcHJlcm91dGluZyBjaGFpbgogICAgaXAgbmV0bnMgZXhlYyAiJENOSV9DT05UQUlORVJJRCIgJChuZnRfYWRkX3J1bGUgJHtORlRfVEFCTEVfTkVUREVWfSAke05GVF9UQUJMRX0gJHtORlRfSU5HUkVTU19DSEFJTn0gZXRoZXIgdHlwZSBhcnAgY291bnRlciBhY2NlcHQpIHx8IGV4aXRXaXRoRXJyb3IgIkZhaWxlZCB0byBhbGxvdyBhcnAgZm9yIGluZ3Jlc3MiCiAgICBpcCBuZXRucyBleGVjICIkQ05JX0NPTlRBSU5FUklEIiAkKG5mdF9hZGRfcnVsZSAke05GVF9UQUJMRV9ORVRERVZ9ICR7TkZUX1RBQkxFfSAke05GVF9JTkdSRVNTX0NIQUlOfSBpaWZuYW1lICRDTklfSUZOQU1FIGNvdW50ZXIganVtcCBtLWluZ3Jlc3MpIHx8IGV4aXRXaXRoRXJyb3IgIkZhaWxlZCB0byBhZGQgcnVsZToganVtcCBtLWluZ3Jlc3MiCgogICAgIyBzZXR1cCBwb3N0cm91dGluZyBjaGFpbgogICAgaXAgbmV0bnMgZXhlYyAiJENOSV9DT05UQUlORVJJRCIgJChuZnRfYWRkX3J1bGUgJHtORlRfVEFCTEVfQlJJREdFfSAke05GVF9UQUJMRX0gJHtORlRfUE9TVFJPVVRJTkdfQ0hBSU59IGV0aGVyIHR5cGUgYXJwIGNvdW50ZXIgYWNjZXB0KSB8fCBleGl0V2l0aEVycm9yICJGYWlsZWQgdG8gYWxsb3cgYXJwIGZvciBlZ3Jlc3MiCiAgICBpcCBuZXRucyBleGVjICIkQ05JX0NPTlRBSU5FUklEIiAkKG5mdF9hZGRfcnVsZSAke05GVF9UQUJMRV9CUklER0V9ICR7TkZUX1RBQkxFfSAke05GVF9QT1NUUk9VVElOR19DSEFJTn0gb2lmbmFtZSAkQ05JX0lGTkFNRSBjb3VudGVyIGp1bXAgbS1lZ3Jlc3MpIHx8IGV4aXRXaXRoRXJyb3IgIkZhaWxlZCB0byBhZGQgcnVsZToganVtcCBtLWVncmVzcyIKCiAgICBpcCBuZXRucyBleGVjICIkQ05JX0NPTlRBSU5FUklEIiAkKG5mdF9hZGRfcnVsZSAiJHtORlRfVEFCTEVfTkVUREVWfSIgIiR7TkZUX1RBQkxFfSIgbS1pbmdyZXNzIGNvdW50ZXIgbWV0YSBtYXJrIHNldCBtZXRhIG1hcmsgIiYiIDB4ZmZmY2ZmZmYpIHx8IGV4aXRXaXRoRXJyb3IgIkZhaWxlZCB0byBhZGQgcnVsZTogc2V0IG1ldGEgbWFyayAmIDB4ZmZmY2ZmZmYiCiAgICBpcCBuZXRucyBleGVjICIkQ05JX0NPTlRBSU5FUklEIiAkKG5mdF9hZGRfcnVsZSAiJHtORlRfVEFCTEVfQlJJREdFfSIgIiR7TkZUX1RBQkxFfSIgbS1lZ3Jlc3MgY291bnRlciBtZXRhIG1hcmsgc2V0IG1ldGEgbWFyayAiJiIgMHhmZmZjZmZmZikgfHwgZXhpdFdpdGhFcnJvciAiRmFpbGVkIHRvIGFkZCBydWxlOiBzZXQgbWV0YSBtYXJrICYgMHhmZmZjZmZmZiIKCiAgICBjcmVhdGVfY2hhaW5zX2Zvcl9maWx0ZXJpbmcgJHBvbGljeV9pZCAke05GVF9UQUJMRV9ORVRERVZ9ICJpbmdyZXNzIgogICAgY3JlYXRlX2NoYWluc19mb3JfZmlsdGVyaW5nICRwb2xpY3lfaWQgJHtORlRfVEFCTEVfQlJJREdFfSAiZWdyZXNzIgoKICAgIGlwIG5ldG5zIGV4ZWMgIiRDTklfQ09OVEFJTkVSSUQiICQobmZ0X2FkZF9ydWxlICIke05GVF9UQUJMRV9ORVRERVZ9IiAiJHtORlRfVEFCTEV9IiBtLWluZ3Jlc3MgbWV0YSBtYXJrICImIiAweDAwMDMwMDAwID09IDB4MDAwMzAwMDAgY291bnRlciByZXR1cm4pIHx8IGV4aXRXaXRoRXJyb3IgIkZhaWxlZCB0byBhZGQgcnVsZTogbWFyayAmIDB4MDAwMzAwMDAgPT0gMHgwMDAzMDAwMCBjb3VudGVyIHJldHVybiIKICAgIGlwIG5ldG5zIGV4ZWMgIiRDTklfQ09OVEFJTkVSSUQiICQobmZ0X2FkZF9ydWxlICIke05GVF9UQUJMRV9ORVRERVZ9IiAiJHtORlRfVEFCTEV9IiBtLWluZ3Jlc3MgY291bnRlciBkcm9wKSB8fCBleGl0V2l0aEVycm9yICJGYWlsZWQgdG8gYWRkIHJ1bGU6IGRyb3AiCgogICAgaXAgbmV0bnMgZXhlYyAiJENOSV9DT05UQUlORVJJRCIgJChuZnRfYWRkX3J1bGUgIiR7TkZUX1RBQkxFX0JSSURHRX0iICIke05GVF9UQUJMRX0iIG0tZWdyZXNzIG1ldGEgbWFyayAiJiIgMHgwMDAzMDAwMCA9PSAweDAwMDMwMDAwIGNvdW50ZXIgcmV0dXJuKSB8fCBleGl0V2l0aEVycm9yICJGYWlsZWQgdG8gYWRkIHJ1bGU6IG1hcmsgJiAweDAwMDMwMDAwID09IDB4MDAwMzAwMDAgY291bnRlciByZXR1cm4iCiAgICBpcCBuZXRucyBleGVjICIkQ05JX0NPTlRBSU5FUklEIiAkKG5mdF9hZGRfcnVsZSAiJHtORlRfVEFCTEVfQlJJREdFfSIgIiR7TkZUX1RBQkxFfSIgbS1lZ3Jlc3MgY291bnRlciBkcm9wKSB8fCBleGl0V2l0aEVycm9yICJGYWlsZWQgdG8gYWRkIHJ1bGU6IGRyb3AiCgogICAgZXhpdFdpdGhTdWNjZXNzCjs7CgpERUwpCiAgICBlY2hvICJEZWxldGUgJENOSV9DT05UQUlORVJJRCIgPj4gJGxvZ0ZpbGUKICAgIHJtIC1mIC92YXIvcnVuL25ldG5zLyIkQ05JX0NPTlRBSU5FUklEIgo7OwoKVkVSU0lPTikKICAgIGVjaG8gInsiY25pVmVyc2lvbiI6IjAuMy4xIiwic3VwcG9ydGVkVmVyc2lvbnMiOlsiMC4xLjAiLCIwLjIuMCIsIjAuMy4wIiwiMC4zLjEiXX0iID4mMwo7OwoKKikKICAgIGV4aXQgMAo7OwoKZXNhYwo="
         securityContext:
           privileged: true
         volumeMounts:
@@ -43,6 +76,85 @@ spec:
           mountPath: /host/etc/cni/net.d
         - name: cnibin
           mountPath: /host/opt/cni/bin
+        command:
+          - /bin/bash
+          - -c
+          - |
+            echo $(SCRIPT) | base64 -d > /host/opt/cni/bin/$(CNI_NAME) &&\
+            chmod +x /host/opt/cni/bin/$(CNI_NAME)
+
+            # Inspired by: https://tinyurl.com/y7r2knme
+            CIDR_TEMP_KUBECONFIG="/tmp/cidr-filtering.kubeconfig"
+            CIDR_KUBECONFIG_FILE_HOST=$(CNI_CONF_DIR)/cidr-filtering.d/cidr-filtering.kubeconfig
+            mkdir -p $(CNI_CONF_DIR)/cidr-filtering.d
+            
+
+            SERVICE_ACCOUNT_PATH=/var/run/secrets/kubernetes.io/serviceaccount
+            KUBE_CA_FILE=${KUBE_CA_FILE:-$SERVICE_ACCOUNT_PATH/ca.crt}
+            SERVICEACCOUNT_TOKEN=$(cat $SERVICE_ACCOUNT_PATH/token)
+            SKIP_TLS_VERIFY=${SKIP_TLS_VERIFY:-false}
+
+            # Check if we're running as a k8s pod.
+            if [ -f "$SERVICE_ACCOUNT_PATH/token" ]; then
+              # We're running as a k8d pod - expect some variables.
+              if [ -z ${KUBERNETES_SERVICE_HOST} ]; then
+                error "KUBERNETES_SERVICE_HOST not set"; exit 1;
+              fi
+              if [ -z ${KUBERNETES_SERVICE_PORT} ]; then
+                error "KUBERNETES_SERVICE_PORT not set"; exit 1;
+              fi
+
+              if [ "$SKIP_TLS_VERIFY" == "true" ]; then
+                TLS_CFG="insecure-skip-tls-verify: true"
+              elif [ -f "$KUBE_CA_FILE" ]; then
+                TLS_CFG="certificate-authority-data: $(cat $KUBE_CA_FILE | base64 | tr -d '\n')"
+              fi
+
+              # Write a kubeconfig file for the CNI plugin.  Do this
+              # to skip TLS verification for now.  We should eventually support
+              # writing more complete kubeconfig files. This is only used
+              # if the provided CNI network config references it.
+              touch $CIDR_TEMP_KUBECONFIG
+              chmod ${KUBECONFIG_MODE:-600} $CIDR_TEMP_KUBECONFIG
+              # Write the kubeconfig to a temp file first.
+              cat > $CIDR_TEMP_KUBECONFIG <<EOF
+            # Kubeconfig file for CIDR CNI plugin.
+            apiVersion: v1
+            kind: Config
+            clusters:
+            - name: local
+              cluster:
+                server: ${KUBERNETES_SERVICE_PROTOCOL:-https}://[${KUBERNETES_SERVICE_HOST}]:${KUBERNETES_SERVICE_PORT}
+                $TLS_CFG
+            users:
+            - name: cidr-filtering
+              user:
+                token: "${SERVICEACCOUNT_TOKEN}"
+            contexts:
+            - name: cidr-filtering-context
+              context:
+                cluster: local
+                user: cidr-filtering
+            current-context: cidr-filtering-context
+            EOF
+
+              # Atomically move the temp kubeconfig to its permanent home.
+              mv -f $CIDR_TEMP_KUBECONFIG $CIDR_KUBECONFIG_FILE_HOST
+            else
+              warn "Doesn't look like we're running in a kubernetes environment (no serviceaccount token)"
+            fi
+      containers:
+      - name: cidr-filtering-cni
+        image: registry.access.redhat.com/ubi8/ubi:8.6-754
+        command: ["sleep"]
+        args: ["infinity"]
+        resources:
+          requests:
+            cpu: "10m"
+            memory: "25Mi"
+          limits:
+            cpu: "10m"
+            memory: "25Mi"
       terminationGracePeriodSeconds: 10
       volumes:
       - name: cni

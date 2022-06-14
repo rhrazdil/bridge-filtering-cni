@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Copyright 2018-2019 Red Hat, Inc.
+# Copyright 2018-2022 Red Hat, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -27,3 +27,10 @@ echo 'Installing packages'
 for node in $(./cluster/kubectl.sh get nodes --no-headers | awk '{print $1}'); do
     ./cluster/cli.sh ssh ${node} -- sudo dnf install -y jq
 done
+
+echo 'Install kubevirt'
+
+export RELEASE=v0.53.1
+./cluster/kubectl.sh apply -f "https://github.com/kubevirt/kubevirt/releases/download/${RELEASE}/kubevirt-operator.yaml"
+./cluster/kubectl.sh apply -f "https://github.com/kubevirt/kubevirt/releases/download/${RELEASE}/kubevirt-cr.yaml"
+./cluster/kubectl.sh -n kubevirt wait kv kubevirt --for condition=Available --timeout 5m

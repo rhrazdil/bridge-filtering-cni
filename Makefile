@@ -61,6 +61,9 @@ build:
 image-push: build
 	skopeo copy containers-storage:localhost/cidr-filtering-cni docker://$(IMAGE_REGISTRY)/cidr-filtering-cni
 
+generate:
+	./hack/generate.sh	
+ 
 cluster-clean:
 	./cluster/clean.sh
 
