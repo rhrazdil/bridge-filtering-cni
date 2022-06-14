@@ -1,0 +1,165 @@
+---
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: cidr-filtering
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - configmaps
+    verbs:
+      - get
+      - list
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: cidr-filtering
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cidr-filtering
+subjects:
+- kind: ServiceAccount
+  name: cidr-filtering
+  namespace: kube-system
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: cidr-filtering
+  namespace: kube-system
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: cidr-filtering-cni-ds
+  namespace: kube-system
+  labels:
+    tier: node
+    app: cidr-filtering-cni
+    name: cidr-filtering-cni
+spec:
+  selector:
+    matchLabels:
+      name: cidr-filtering-cni
+  updateStrategy:
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        tier: node
+        app: cidr-filtering-cni
+        name: cidr-filtering-cni
+    spec:
+      tolerations:
+      - operator: Exists
+        effect: NoSchedule
+      - operator: Exists
+        effect: NoExecute
+      serviceAccountName: cidr-filtering
+      initContainers:
+      - name: cidr-filtering-cni-copier
+        image: registry.access.redhat.com/ubi8/ubi:8.6-754
+        env:
+        - name: CNI_NAME
+          value: cidr-filtering-cni
+        - name: CNI_CONF_DIR
+          value: "/host/etc/cni/net.d"
+        - name: SCRIPT
+          value: "SCRIPT_PLACEHOLDER"
+        securityContext:
+          privileged: true
+        volumeMounts:
+        - name: cni
+          mountPath: /host/etc/cni/net.d
+        - name: cnibin
+          mountPath: /host/opt/cni/bin
+        command:
+          - /bin/bash
+          - -c
+          - |
+            echo $(SCRIPT) | base64 -d > /host/opt/cni/bin/$(CNI_NAME) &&\
+            chmod +x /host/opt/cni/bin/$(CNI_NAME)
+
+            # Inspired by: https://tinyurl.com/y7r2knme
+            CIDR_TEMP_KUBECONFIG="/tmp/cidr-filtering.kubeconfig"
+            CIDR_KUBECONFIG_FILE_HOST=$(CNI_CONF_DIR)/cidr-filtering.d/cidr-filtering.kubeconfig
+            mkdir -p $(CNI_CONF_DIR)/cidr-filtering.d
+            
+
+            SERVICE_ACCOUNT_PATH=/var/run/secrets/kubernetes.io/serviceaccount
+            KUBE_CA_FILE=${KUBE_CA_FILE:-$SERVICE_ACCOUNT_PATH/ca.crt}
+            SERVICEACCOUNT_TOKEN=$(cat $SERVICE_ACCOUNT_PATH/token)
+            SKIP_TLS_VERIFY=${SKIP_TLS_VERIFY:-false}
+
+            # Check if we're running as a k8s pod.
+            if [ -f "$SERVICE_ACCOUNT_PATH/token" ]; then
+              # We're running as a k8d pod - expect some variables.
+              if [ -z ${KUBERNETES_SERVICE_HOST} ]; then
+                error "KUBERNETES_SERVICE_HOST not set"; exit 1;
+              fi
+              if [ -z ${KUBERNETES_SERVICE_PORT} ]; then
+                error "KUBERNETES_SERVICE_PORT not set"; exit 1;
+              fi
+
+              if [ "$SKIP_TLS_VERIFY" == "true" ]; then
+                TLS_CFG="insecure-skip-tls-verify: true"
+              elif [ -f "$KUBE_CA_FILE" ]; then
+                TLS_CFG="certificate-authority-data: $(cat $KUBE_CA_FILE | base64 | tr -d '\n')"
+              fi
+
+              # Write a kubeconfig file for the CNI plugin.  Do this
+              # to skip TLS verification for now.  We should eventually support
+              # writing more complete kubeconfig files. This is only used
+              # if the provided CNI network config references it.
+              touch $CIDR_TEMP_KUBECONFIG
+              chmod ${KUBECONFIG_MODE:-600} $CIDR_TEMP_KUBECONFIG
+              # Write the kubeconfig to a temp file first.
+              cat > $CIDR_TEMP_KUBECONFIG <<EOF
+            # Kubeconfig file for CIDR CNI plugin.
+            apiVersion: v1
+            kind: Config
+            clusters:
+            - name: local
+              cluster:
+                server: ${KUBERNETES_SERVICE_PROTOCOL:-https}://[${KUBERNETES_SERVICE_HOST}]:${KUBERNETES_SERVICE_PORT}
+                $TLS_CFG
+            users:
+            - name: cidr-filtering
+              user:
+                token: "${SERVICEACCOUNT_TOKEN}"
+            contexts:
+            - name: cidr-filtering-context
+              context:
+                cluster: local
+                user: cidr-filtering
+            current-context: cidr-filtering-context
+            EOF
+
+              # Atomically move the temp kubeconfig to its permanent home.
+              mv -f $CIDR_TEMP_KUBECONFIG $CIDR_KUBECONFIG_FILE_HOST
+            else
+              warn "Doesn't look like we're running in a kubernetes environment (no serviceaccount token)"
+            fi
+      containers:
+      - name: cidr-filtering-cni
+        image: registry.access.redhat.com/ubi8/ubi:8.6-754
+        command: ["sleep"]
+        args: ["infinity"]
+        resources:
+          requests:
+            cpu: "10m"
+            memory: "25Mi"
+          limits:
+            cpu: "10m"
+            memory: "25Mi"
+      terminationGracePeriodSeconds: 10
+      volumes:
+      - name: cni
+        hostPath:
+          path: /etc/cni/net.d
+      - name: cnibin
+        hostPath:
+          path: /opt/cni/bin
