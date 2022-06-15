@@ -93,16 +93,29 @@ nft_add_rule() {
 }
 
 create_rules_for_filtering() {
-    local policy_id="$1"
-    local table_type="$2"
-    local direction="$3"
-    local match_iface="$4"
+    local config_id="$1"
+    local config="$2"
+    local table_type="$3"
+    local direction="$4"
     
     local match_addr="saddr"
     if [[ "$direction" == "egress" ]]; then
         local match_addr="daddr"
     fi
-    
+    local match_iface="iifname"
+    if [[ "$direction" == "egress" ]]; then
+        match_iface="oifname"
+    fi
+
+    _create_filtering_chain() {
+        local config_id="$1"
+        local config="$2"
+        local table_type="$3"
+        local direction="$4"
+        ip netns exec "$CNI_CONTAINERID" $(create_chain "${table_type}" "${NFT_TABLE}" m-"${config_id}"-"${direction}") || exitWithError "Failed to add chain m-${config_id}-${direction}"
+        ip netns exec "$CNI_CONTAINERID" $(nft_add_rule "${table_type}" "${NFT_TABLE}" m-"${direction}" "${match_iface}" "$CNI_IFNAME" counter jump m-"${config_id}"-"${direction}") || exitWithError "Failed to add rule: jump m-${config_id}-${direction}"
+    }
+
     _create_subnet_rule() {
         local subnet=$1
         if [[ "$(get_object "${subnet}" ".subnet.except")" != "null" ]]; then
@@ -117,13 +130,13 @@ create_rules_for_filtering() {
 
     _drop_ip() {
         local ip="$1"
-        ip netns exec "$CNI_CONTAINERID" $(nft_add_rule ${table_type} ${NFT_TABLE} m-${policy_id}-${direction}-subnets ${match_iface} $CNI_IFNAME $(get_ip_version "${ip}") ${match_addr} "${ip}" counter drop)
+        ip netns exec "$CNI_CONTAINERID" $(nft_add_rule ${table_type} ${NFT_TABLE} m-${config_id}-${direction}-subnets ${match_iface} $CNI_IFNAME $(get_ip_version "${ip}") ${match_addr} ${ip} counter drop)
     }
 
     _accept_cidr() {
         local subnet="$1"
         local cidr=$(echo "${subnet}" | jq -r ".subnet.cidr")
-        ip netns exec "$CNI_CONTAINERID" $(nft_add_rule ${table_type} ${NFT_TABLE} m-${policy_id}-${direction}-subnets ${match_iface} $CNI_IFNAME $(get_ip_version "${cidr}") ${match_addr} "${cidr}" counter meta mark set mark or 0x20000)
+        ip netns exec "$CNI_CONTAINERID" $(nft_add_rule ${table_type} ${NFT_TABLE} m-${config_id}-${direction}-subnets ${match_iface} $CNI_IFNAME $(get_ip_version "${cidr}") ${match_addr} ${cidr} counter meta mark set mark or 0x20000)
     }
 
     _accept_port() {
@@ -134,18 +147,33 @@ create_rules_for_filtering() {
         if [[ "$port" == "null" || "$protocol" == "null" || "$port" == "" || "$protocol" == "" ]]; then
             exitWithError "Port and protocol must be specified."
         else
-            ip netns exec "$CNI_CONTAINERID" $(nft_add_rule ${table_type} ${NFT_TABLE} m-${policy_id}-${direction}-ports ${match_iface} $CNI_IFNAME ${protocol,,} dport ${port} counter meta mark set meta mark "|" 0x00010000)
+            ip netns exec "$CNI_CONTAINERID" $(nft_add_rule ${table_type} ${NFT_TABLE} m-${config_id}-${direction}-ports ${match_iface} $CNI_IFNAME ${protocol,,} dport ${port} counter meta mark set meta mark "|" 0x00010000)
         fi
     }
 
+    local is_filtering_chain_created=false
     # handle ip block
-    if [[ $(echo "$stdin" | jq -r ".${direction}.subnets") != "null" ]]; then
-        for_json_array "$stdin" ".${direction}.subnets" _create_subnet_rule
+    if [[ $(echo "$config" | jq -r ".${direction}.subnets") != "null" ]]; then
+        _create_filtering_chain "${config_id}" "${config}" "${table_type}" "${direction}"
+        is_filtering_chain_created=true
+
+        ip netns exec "$CNI_CONTAINERID" $(create_chain "${table_type}" "${NFT_TABLE}" m-"${config_id}"-"${direction}"-subnets) || exitWithError "Failed to add chain m-"${config_id}"-"${direction}"-subnets"
+        ip netns exec "$CNI_CONTAINERID" $(nft_add_rule "${table_type}" "${NFT_TABLE}" m-"${config_id}"-"${direction}" counter jump m-"${config_id}"-"${direction}"-subnets) || exitWithError "Failed to add rule: jump m-"${config_id}"-"${direction}"-subnets"
+
+        for_json_array "$config" ".${direction}.subnets" _create_subnet_rule
     fi
 
     # handle ports
-    if [[ $(echo "$stdin" | jq -r ".${direction}.ports") != "null" ]]; then
-        for_json_array "$stdin" ".${direction}.ports" _accept_port
+    if [[ $(echo "$config" | jq -r ".${direction}.ports") != "null" ]]; then
+        if [[ "$is_filtering_chain_created" == false ]]; then
+            _create_filtering_chain "${config_id}" "${config}" "${table_type}" "${direction}"
+            is_filtering_chain_created=true
+        fi
+
+        ip netns exec "$CNI_CONTAINERID" $(create_chain "${table_type}" "${NFT_TABLE}" m-"${config_id}"-"${direction}"-ports) || exitWithError "Failed to add chain m-"${config_id}"-"${direction}"-ports"
+        ip netns exec "$CNI_CONTAINERID" $(nft_add_rule "${table_type}" "${NFT_TABLE}" m-"${config_id}"-"${direction}" counter jump m-"${config_id}"-"${direction}"-ports) || exitWithError "Failed to add rule: jump m-"${config_id}"-"${direction}"-ports"
+
+        for_json_array "$config" ".${direction}.ports" _accept_port
     fi
 }
 
@@ -164,28 +192,6 @@ exitWithSuccess() {
     exit 0
 }
 
-create_chains_for_filtering() {
-    local policy_id="$1"
-    local table_type="$2"
-    local direction="$3"
-
-    local match_iface="iifname"
-    if [[ "$direction" == "egress" ]]; then
-        match_iface="oifname"
-    fi
-
-    ip netns exec "$CNI_CONTAINERID" $(create_chain "${table_type}" "${NFT_TABLE}" m-"${policy_id}"-"${direction}") || exitWithError "Failed to add chain m-${policy_id}-${direction}"
-    ip netns exec "$CNI_CONTAINERID" $(nft_add_rule "${table_type}" "${NFT_TABLE}" m-"${direction}" "${match_iface}" "$CNI_IFNAME" counter jump m-"${policy_id}"-"${direction}") || exitWithError "Failed to add rule: jump m-${policy_id}-${direction}"
-
-    ip netns exec "$CNI_CONTAINERID" $(create_chain "${table_type}" "${NFT_TABLE}" m-"${policy_id}"-"${direction}"-subnets) || exitWithError "Failed to add chain m-"${policy_id}"-"${direction}"-subnets"
-    ip netns exec "$CNI_CONTAINERID" $(create_chain "${table_type}" "${NFT_TABLE}" m-"${policy_id}"-"${direction}"-ports) || exitWithError "Failed to add chain m-"${policy_id}"-"${direction}"-ports"
-    
-    ip netns exec "$CNI_CONTAINERID" $(nft_add_rule "${table_type}" "${NFT_TABLE}" m-"${policy_id}"-"${direction}" counter jump m-"${policy_id}"-"${direction}"-subnets) || exitWithError "Failed to add rule: jump m-"${policy_id}"-"${direction}"-subnets"
-    ip netns exec "$CNI_CONTAINERID" $(nft_add_rule "${table_type}" "${NFT_TABLE}" m-"${policy_id}"-"${direction}" counter jump m-"${policy_id}"-"${direction}"-ports) || exitWithError "Failed to add rule: jump m-"${policy_id}"-"${direction}"-ports"
-
-    create_rules_for_filtering "${policy_id}" "${table_type}" "${direction}" "${match_iface}"
-}
-
 main() {
     case $CNI_COMMAND in
     ADD)
@@ -193,9 +199,7 @@ main() {
         echo "CNI_CONTAINERID: $CNI_CONTAINERID" >> $logFile
         echo "STDIN: $stdin" >> $logFile
 
-        local policy_name=$(echo "$stdin" | jq -r ".name")
-        local policy_id="$(echo "$policy_name" | sha1sum )"
-        policy_id="${policy_id:0:5}" # use first 5 characters to identify a policy
+        local policy_label=$(echo "$stdin" | jq -r ".label")
 
         mkdir -p /var/run/netns/
         ln -sfT "$CNI_NETNS" /var/run/netns/"${CNI_CONTAINERID}"
@@ -219,11 +223,32 @@ main() {
         ip netns exec "$CNI_CONTAINERID" $(nft_add_rule ${NFT_TABLE_BRIDGE} ${NFT_TABLE} ${NFT_POSTROUTING_CHAIN} ether type arp counter accept) || exitWithError "Failed to allow arp for egress"
         ip netns exec "$CNI_CONTAINERID" $(nft_add_rule ${NFT_TABLE_BRIDGE} ${NFT_TABLE} ${NFT_POSTROUTING_CHAIN} oifname $CNI_IFNAME counter jump m-egress) || exitWithError "Failed to add rule: jump m-egress"
 
-        ip netns exec "$CNI_CONTAINERID" $(nft_add_rule "${NFT_TABLE_NETDEV}" "${NFT_TABLE}" m-ingress counter meta mark set meta mark "&" 0xfffcffff) || exitWithError "Failed to add rule: set meta mark & 0xfffcffff"
         ip netns exec "$CNI_CONTAINERID" $(nft_add_rule "${NFT_TABLE_BRIDGE}" "${NFT_TABLE}" m-egress counter meta mark set meta mark "&" 0xfffcffff) || exitWithError "Failed to add rule: set meta mark & 0xfffcffff"
+        ip netns exec "$CNI_CONTAINERID" $(nft_add_rule "${NFT_TABLE_NETDEV}" "${NFT_TABLE}" m-ingress counter meta mark set meta mark "&" 0xfffcffff) || exitWithError "Failed to add rule: set meta mark & 0xfffcffff"
+    
+        _process_configmap() {
+            local configmap_name="$1"
+            local configmap_namespace="$2"
+            local config_id="$(echo "${configmap_name}${configmap_namespace}" | sha1sum )"
+            config_id="${config_id:0:5}" # use first 5 characters to identify configuration specified in a configmap
 
-        create_chains_for_filtering $policy_id ${NFT_TABLE_NETDEV} "ingress"
-        create_chains_for_filtering $policy_id ${NFT_TABLE_BRIDGE} "egress"
+            # the json config in configmap is escaped when the configmap itself is obtained in json. To be able to work with it with jq, we need to remove '\n', '\'', spaces and leading/trailing character (which is an apostrophe)
+            local config=$(kubectl --kubeconfig=/etc/cni/net.d/cidr-filtering.d/cidr-filtering.kubeconfig get cm ${configmap_name} -n ${configmap_namespace} -o json | jq -c '.data."config.json"' | sed 's#\\n##g;s#\\##g;s# ##g;s/^.//;s/.$//')
+
+            create_rules_for_filtering "$config_id" "$config" "${NFT_TABLE_NETDEV}" "ingress"
+            create_rules_for_filtering "$config_id" "$config" "${NFT_TABLE_BRIDGE}" "egress"
+        }
+        
+        for configmap in $(kubectl --kubeconfig=/etc/cni/net.d/cidr-filtering.d/cidr-filtering.kubeconfig get cm -l${policy_label} -A -o jsonpath='{range .items[*]}{@.metadata.name}{","}{@.metadata.namespace}{"\n"}'); do
+            if [[ "$configmap" == "," ]]; then
+                continue
+            fi
+
+            configmap_name=$(echo $configmap | awk -F',' '{print $1}')
+            configmap_namespace=$(echo $configmap | awk -F',' '{print $2}')
+
+            _process_configmap $configmap_name $configmap_namespace
+        done
 
         ip netns exec "$CNI_CONTAINERID" $(nft_add_rule "${NFT_TABLE_NETDEV}" "${NFT_TABLE}" m-ingress meta mark "&" 0x00030000 == 0x00030000 counter return) || exitWithError "Failed to add rule: mark & 0x00030000 == 0x00030000 counter return"
         ip netns exec "$CNI_CONTAINERID" $(nft_add_rule "${NFT_TABLE_NETDEV}" "${NFT_TABLE}" m-ingress counter drop) || exitWithError "Failed to add rule: drop"
