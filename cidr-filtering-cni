@@ -53,7 +53,7 @@ get_ip_version() {
         echo "ip"
     fi
 }
-
+test
 create_table() {
     local type="$1"
     local name="$2"

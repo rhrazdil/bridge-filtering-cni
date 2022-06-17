@@ -1,0 +1,71 @@
+{
+  "cniVersion": "0.3.1",
+  "name": "nad-bridge-cidr",
+  "type": "cidr-filtering-cni",
+  "ingress": {
+    "blocks": [
+      {
+        "ipBlock": {
+          "cidr": "192.168.66.0/24",
+          "except": [
+          "192.168.66.102",
+          "192.168.66.103",
+          "192.168.66.104"
+          ]
+        }
+      },
+      {
+        "ipBlock": {
+          "cidr": "1.1.1.0/24",
+          "except": [
+          "1.1.1.2"
+          ]
+        }
+      }
+    ],
+    "ports": [
+      {
+      "protocol": "TCP",
+      "port": ""
+      }
+    ]
+  },
+  "egress": {
+    "blocks": [
+      {
+        "ipBlock": {
+          "cidr": "192.168.66.0/24",
+          "except": [
+          "192.168.66.102"
+          ]
+        }
+      },
+      {
+        "ipBlock": {
+          "cidr": "255.255.255.255/32",
+          "except": [
+          "192.168.66.102"
+          ]
+        }
+      },
+      {
+        "ipBlock": {
+          "cidr": "1.1.1.0/24",
+          "except": [
+          "1.1.1.2"
+          ]
+        }
+      }
+    ],
+    "ports": [
+        {
+        "protocol": "TCP",
+        "port": 80
+        }
+    ]
+  }
+}
+
+
+
+

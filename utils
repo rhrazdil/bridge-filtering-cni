@@ -1,0 +1,39 @@
+#!/bin/bash
+
+get_object() {
+    local json_object="$1"
+    local json_path="$2"
+    echo "$json_object" | jq -c "$json_path"
+}
+
+get_array_items() {
+    local json_object="$1"
+    local json_path="$2"
+    echo "$json_object" | jq -c $json_path | jq -c ".[]"
+}
+
+get_array_len() {
+    local json_object="$1"
+    local json_path="$2"
+    echo "$json_object" | jq -c "$json_path" | jq ". | length"
+}
+
+for_json_array() {
+    local json_object="$1"
+    local json_path="$2"
+    local f="$3"
+    set -- "${@:4}"
+    for item in $(get_array_items "$json_object" "$json_path"); do
+        $f $item $@
+    done
+}
+
+get_ip_version() {
+    local ip_address="$1"
+    if [[ "$ip_address" =~ .*:.* ]]
+    then
+        echo "ip6"
+    else
+        echo "ip"
+    fi
+}

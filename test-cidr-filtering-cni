@@ -1,0 +1,37 @@
+#!/bin/bash
+
+source ./utils
+
+test_get_object() {
+    obj='{"test":{"k1": "value1","k2": "value2"}}'
+    assertEquals '{"k1":"value1","k2":"value2"}' "$(get_object "${obj}" ".test")"
+}
+
+test_get_array_items() {
+    obj='{"test":["k1", "value1","k2", "value2"]}'
+    res=$(get_array_items "${obj}" ".test")
+    assertContains "$res" "k1"
+    assertContains "$res" "value1"
+    assertContains "$res" "k2"
+    assertContains "$res" "value2"
+}
+
+test_get_array_len() {
+    obj='{"test":["k1", "value1","k2", "value2"]}'
+    assertEquals "4" "$(get_array_len "${obj}" ".test")"
+}
+
+test_for_json_array() {
+    _echo_item() {
+        local item=$1
+        echo "$item"
+    }
+    obj='{"test":["k1", "value1","k2", "value2"]}'
+    res=$(for_json_array "${obj}" ".test" _echo_item)
+    assertContains "$res" "value1"
+    assertContains "$res" "k2"
+    assertContains "$res" "value2"
+}
+
+# Load shUnit2.
+. shunit2
