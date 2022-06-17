@@ -31,7 +31,7 @@ whitespace: $(all_sources)
 	./hack/whitespace.sh --fix
 	touch $@
 
-check: whitespace-check vet goimports-check
+check:
 	./hack/check.sh
 
 whitespace-check: $(all_sources)
