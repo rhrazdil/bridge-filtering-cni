@@ -61,9 +61,8 @@ generate:
 cluster-clean:
 	./cluster/clean.sh
 
-vendor: $(GO)
-	$(GO) mod tidy -compat=$(GO_VERSION)
-	$(GO) mod vendor
+unit:
+	TEST=true ./test-cidr-filtering-cni
 
 .PHONY: \
 	all \
