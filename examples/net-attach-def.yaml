@@ -5,7 +5,7 @@ metadata:
   name: local-network
   namespace: default
   labels:
-    cidr-filtering-cni: ""
+    br1-with-cidr-filtering: ""
 data:
   config.json: |
     {
@@ -41,7 +41,7 @@ metadata:
   name: network-dhcp
   namespace: default
   labels:
-    cidr-filtering-cni: ""
+    br1-with-cidr-filtering: ""
 data:
   config.json: |
     {
@@ -63,7 +63,7 @@ metadata:
   name: google-dns
   namespace: default
   labels:
-    cidr-filtering-cni: ""
+    br1-with-cidr-filtering: ""
 data:
   config.json: |
     {
@@ -96,7 +96,7 @@ metadata:
   name: all-ports
   namespace: default
   labels:
-    cidr-filtering-cni: ""
+    br1-with-cidr-filtering: ""
 data:
   config.json: |
     {
@@ -133,15 +133,14 @@ metadata:
 spec:
   config: '{
     "cniVersion": "0.3.1",
-    "name": "nad-bridge-cidr",
+    "name": "br1-with-cidr-filtering",
     "plugins": [
       {
         "type": "cnv-bridge",
         "bridge": "br1"
       },
       {
-        "type": "cidr-filtering-cni",
-        "label": "cidr-filtering-cni"
+        "type": "cidr-filtering-cni"
       }
     ]
   }'
