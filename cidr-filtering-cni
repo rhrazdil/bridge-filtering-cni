@@ -66,7 +66,7 @@ create_netdev_base_chain() {
     local chain="$3"
     local hook="$4"
     local device="$5"
-    echo "nft add chain $type $name $chain { type filter hook $hook device $device priority 0; policy accept; }" | tee -a $logFile
+    echo "nft add chain $type $name $chain { type filter hook $hook device $device priority -1; policy accept; }" | tee -a $logFile
 }
 
 create_base_chain() {
@@ -74,7 +74,7 @@ create_base_chain() {
     local name="$2"
     local chain="$3"
     local hook="$4"
-    echo "nft add chain $type $name $chain { type filter hook $hook priority 0; policy accept; }" | tee -a $logFile
+    echo "nft add chain $type $name $chain { type filter hook $hook priority -1; policy accept; }" | tee -a $logFile
 }
 
 create_chain() {
