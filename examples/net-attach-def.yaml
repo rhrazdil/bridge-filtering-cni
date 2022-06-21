@@ -5,6 +5,7 @@ metadata:
   name: local-network
   namespace: default
   labels:
+    cidr-filtering-cni: ""
     br1-with-cidr-filtering: ""
 data:
   config.json: |
@@ -41,6 +42,7 @@ metadata:
   name: network-dhcp
   namespace: default
   labels:
+    cidr-filtering-cni: ""
     br1-with-cidr-filtering: ""
 data:
   config.json: |
@@ -63,6 +65,7 @@ metadata:
   name: google-dns
   namespace: default
   labels:
+    cidr-filtering-cni: ""
     br1-with-cidr-filtering: ""
 data:
   config.json: |
@@ -96,6 +99,7 @@ metadata:
   name: all-ports
   namespace: default
   labels:
+    cidr-filtering-cni: ""
     br1-with-cidr-filtering: ""
 data:
   config.json: |

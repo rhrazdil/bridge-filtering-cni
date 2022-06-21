@@ -200,6 +200,7 @@ main() {
         echo "STDIN: $stdin" >> $logFile
         echo "CNI_ARGS: $CNI_ARGS" >> $logFile
 
+        local cidr_filtering_cni_label="cidr-filtering-cni"
         local cni_spec_name=$(echo "$stdin" | jq -r ".name")
         local pod_namespace=""
 
@@ -253,7 +254,7 @@ main() {
             create_rules_for_filtering "$config_id" "$config" "${NFT_EGRESS_TABLE_TYPE}" "egress"
         }
         
-        for configmap_name in $(kubectl --kubeconfig=/etc/cni/net.d/cidr-filtering.d/cidr-filtering.kubeconfig get cm -l${cni_spec_name} -n ${pod_namespace} -o jsonpath='{range .items[*]}{@.metadata.name}{"\n"}' | head -n -1); do
+        for configmap_name in $(kubectl --kubeconfig=/etc/cni/net.d/cidr-filtering.d/cidr-filtering.kubeconfig get cm -l${cni_spec_name},${cidr_filtering_cni_label} -n ${pod_namespace} -o jsonpath='{range .items[*]}{@.metadata.name}{"\n"}' | head -n -1); do
             _process_configmap $configmap_name $pod_namespace
         done
 
