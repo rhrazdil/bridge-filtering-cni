@@ -29,8 +29,22 @@ for node in $(./cluster/kubectl.sh get nodes --no-headers | awk '{print $1}'); d
 done
 
 echo 'Install kubevirt'
-
 export RELEASE=v0.53.1
 ./cluster/kubectl.sh apply -f "https://github.com/kubevirt/kubevirt/releases/download/${RELEASE}/kubevirt-operator.yaml"
 ./cluster/kubectl.sh apply -f "https://github.com/kubevirt/kubevirt/releases/download/${RELEASE}/kubevirt-cr.yaml"
 ./cluster/kubectl.sh -n kubevirt wait kv kubevirt --for condition=Available --timeout 5m
+
+echo 'Install knmstate'
+./cluster/kubectl.sh apply -f https://github.com/nmstate/kubernetes-nmstate/releases/download/v0.71.0/nmstate.io_nmstates.yaml
+./cluster/kubectl.sh apply -f https://github.com/nmstate/kubernetes-nmstate/releases/download/v0.71.0/namespace.yaml
+./cluster/kubectl.sh apply -f https://github.com/nmstate/kubernetes-nmstate/releases/download/v0.71.0/service_account.yaml
+./cluster/kubectl.sh apply -f https://github.com/nmstate/kubernetes-nmstate/releases/download/v0.71.0/role.yaml
+./cluster/kubectl.sh apply -f https://github.com/nmstate/kubernetes-nmstate/releases/download/v0.71.0/role_binding.yaml
+./cluster/kubectl.sh apply -f https://github.com/nmstate/kubernetes-nmstate/releases/download/v0.71.0/operator.yaml
+cat <<EOF | ./cluster/kubectl.sh create -f -
+apiVersion: nmstate.io/v1
+kind: NMState
+metadata:
+  name: nmstate
+EOF
+./cluster/kubectl.sh -n nmstate wait deployment nmstate-operator --for condition=Available --timeout 5m
