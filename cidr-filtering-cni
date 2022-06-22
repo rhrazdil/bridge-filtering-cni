@@ -144,11 +144,30 @@ create_rules_for_filtering() {
         local port=$(echo "$ports" | jq -r ".port")
         local protocol=$(echo "$ports" | jq -r ".protocol")
 
-        if [[ "$port" == "null" || "$protocol" == "null" || "$port" == "" || "$protocol" == "" ]]; then
-            exitWithError "Port and protocol must be specified."
-        else
-            ip netns exec "$CNI_CONTAINERID" $(nft_add_rule ${table_type} ${NFT_TABLE} m-${config_id}-${direction}-ports ${match_iface} $CNI_IFNAME ${protocol,,} dport ${port} counter meta mark set meta mark "|" 0x00010000)
+        if [[ "$protocol" == "null" || "$protocol" == "" ]]; then
+            exitWithError "Protocol must be specified."
         fi
+
+        case ${protocol,,} in
+            icmp)
+                ip netns exec "$CNI_CONTAINERID" $(nft_add_rule ${table_type} ${NFT_TABLE} m-${config_id}-${direction}-ports ${match_iface} $CNI_IFNAME ip protocol ${protocol,,} counter meta mark set meta mark "|" 0x00010000)
+            ;;
+
+            icmpv6)
+                ip netns exec "$CNI_CONTAINERID" $(nft_add_rule ${table_type} ${NFT_TABLE} m-${config_id}-${direction}-ports ${match_iface} $CNI_IFNAME ip6 nexthdr ${protocol,,} counter meta mark set meta mark "|" 0x00010000)
+            ;;
+
+            tcp|udp)
+                if [[ "$port" == "null" || "$port" == "" ]]; then
+                    exitWithError "Port must be specified for tcp|upd."
+                fi
+                ip netns exec "$CNI_CONTAINERID" $(nft_add_rule ${table_type} ${NFT_TABLE} m-${config_id}-${direction}-ports ${match_iface} $CNI_IFNAME ${protocol,,} dport ${port} counter meta mark set meta mark "|" 0x00010000)
+            ;;
+
+            *)
+                exitWithError "Unknown protocol ${protocol}"
+            ;;
+        esac
     }
 
     local is_filtering_chain_created=false

@@ -113,6 +113,9 @@ data:
           {
           "protocol": "udp",
             "port": "1-65535"
+          },
+          {
+            "protocol": "icmp"
           }
         ]
       },
@@ -125,6 +128,12 @@ data:
           {
             "protocol": "udp",
             "port": "1-65535"
+          },
+          {
+            "protocol": "icmp"
+          },
+          {
+            "protocol": "icmpv6"
           }
         ]
       }

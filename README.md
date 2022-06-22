@@ -84,7 +84,9 @@ spec:
 ```
 
 Description of API fields:
-cidr - network subnet in format <network_address>/<mask>
-except - list of IP addresses or IP ranges for which traffic should be dropped
-protocol - either tcp or udp
-port - port or port range in string
+- subnet:
+  - cidr - network subnet in format: \<network_address\>/\<mask\>
+  - except - list of IP addresses or IP ranges for which traffic should be dropped
+- port:
+  - protocol - protocol name in string, supported protocols are tcp, udp, icmp and icmpv6
+  - port - port or port range in string
