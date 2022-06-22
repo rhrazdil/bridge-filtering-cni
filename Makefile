@@ -52,14 +52,8 @@ cluster-up:
 cluster-down:
 	./cluster/down.sh
 
-cluster-sync: build image-push
-	./cluster/kubectl.sh create -f $(DEPLOY_DIR)/daemonset.yaml
-
-build:
-	podman build -t cidr-filtering-cni -f deploy/Dockerfile .
-
-image-push: build
-	skopeo copy containers-storage:localhost/cidr-filtering-cni docker://$(IMAGE_REGISTRY)/cidr-filtering-cni
+cluster-sync: generate
+	./cluster/kubectl.sh apply -f $(DEPLOY_DIR)/daemonset.yaml
 
 generate:
 	./hack/generate.sh	
