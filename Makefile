@@ -62,7 +62,7 @@ cluster-clean:
 	./cluster/clean.sh
 
 unit:
-	TEST=true ./test-cidr-filtering-cni
+	TEST=true LOGFILE=/tmp/cidr-cni.log ./test-cidr-filtering-cni
 
 .PHONY: \
 	all \
