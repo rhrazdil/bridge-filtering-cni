@@ -76,7 +76,7 @@ data:
     }
 ```
 
-Description of API fields:
+## API
 
 - subnet:
   - cidr - network subnet in format: \<network_address\>/\<mask\>
@@ -84,3 +84,32 @@ Description of API fields:
 - port:
   - protocol - protocol name in string, supported protocols are tcp, udp, icmp and icmpv6
   - port - port or port range in string
+
+
+## Examples
+
+The following ConfigMap shows how to allow all ports for ingress/egress. Specifying `ports` with empty array
+allows all ports.
+
+To do the opposite - not allow any port - leave the `ports` attribute unspecified. The behaviour for subnets works analogically.
+
+```yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  labels:
+    br1-with-cidr-filtering: ""
+    cidr-filtering-cni: ""
+  name: allow-all-ports-for-ingress-and-none-for-egress
+data:
+  config.json: |
+    {
+      "ingress": {
+        "ports": []
+      },
+      "egress": {}
+    }
+
+```
+
+
