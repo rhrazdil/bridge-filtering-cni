@@ -5,6 +5,9 @@ set -euo pipefail
 stdin=$(cat /dev/stdin)
 logFile="${LOGFILE:-/var/log/cidr-filtering-cni.log}"
 
+CNI_VERSION="$(echo "$stdin" | jq -r ".cniVersion")"
+CNI_PREV_RESULT="$(echo "$stdin" | jq -cr ".prevResult")"
+
 exec 2>> $logFile
 
 NFT_INGRESS_TABLE_TYPE=bridge
@@ -112,8 +115,8 @@ create_rules_for_filtering() {
         local config="$2"
         local table_type="$3"
         local direction="$4"
-        ip netns exec "$CNI_CONTAINERID" $(create_chain "${table_type}" "${NFT_TABLE}" m-"${config_id}"-"${direction}") || exitWithError "Failed to add chain m-${config_id}-${direction}"
-        ip netns exec "$CNI_CONTAINERID" $(nft_add_rule "${table_type}" "${NFT_TABLE}" m-"${direction}" "${match_iface}" "$CNI_IFNAME" counter jump m-"${config_id}"-"${direction}") || exitWithError "Failed to add rule: jump m-${config_id}-${direction}"
+        ip netns exec "$CNI_CONTAINERID" $(create_chain "${table_type}" "${NFT_TABLE}" m-"${config_id}"-"${direction}") || exitWithError "${CNI_VERSION}" "Failed to add chain m-${config_id}-${direction}"
+        ip netns exec "$CNI_CONTAINERID" $(nft_add_rule "${table_type}" "${NFT_TABLE}" m-"${direction}" "${match_iface}" "$CNI_IFNAME" counter jump m-"${config_id}"-"${direction}") || exitWithError "${CNI_VERSION}" "Failed to add rule: jump m-${config_id}-${direction}"
     }
 
     _create_subnet_rule() {
@@ -123,7 +126,7 @@ create_rules_for_filtering() {
         fi
 
         if [[ "$(get_object "${subnet}" ".subnet.cidr")" == "null" ]]; then
-            exitWithError "cidr must be specified."
+            exitWithError "${CNI_VERSION}" "cidr must be specified."
         fi
         _accept_cidr "${subnet}"
     }
@@ -145,7 +148,7 @@ create_rules_for_filtering() {
         local protocol=$(echo "$ports" | jq -r ".protocol")
 
         if [[ "$port" == "null" || "$protocol" == "null" || "$port" == "" || "$protocol" == "" ]]; then
-            exitWithError "Port and protocol must be specified."
+            exitWithError "${CNI_VERSION}" "Port and protocol must be specified."
         else
             ip netns exec "$CNI_CONTAINERID" $(nft_add_rule ${table_type} ${NFT_TABLE} m-${config_id}-${direction}-ports ${match_iface} $CNI_IFNAME ${protocol,,} dport ${port} counter meta mark set meta mark "|" 0x00010000)
         fi
@@ -157,8 +160,8 @@ create_rules_for_filtering() {
         _create_filtering_chain "${config_id}" "${config}" "${table_type}" "${direction}"
         is_filtering_chain_created=true
 
-        ip netns exec "$CNI_CONTAINERID" $(create_chain "${table_type}" "${NFT_TABLE}" m-"${config_id}"-"${direction}"-subnets) || exitWithError "Failed to add chain m-"${config_id}"-"${direction}"-subnets"
-        ip netns exec "$CNI_CONTAINERID" $(nft_add_rule "${table_type}" "${NFT_TABLE}" m-"${config_id}"-"${direction}" counter jump m-"${config_id}"-"${direction}"-subnets) || exitWithError "Failed to add rule: jump m-"${config_id}"-"${direction}"-subnets"
+        ip netns exec "$CNI_CONTAINERID" $(create_chain "${table_type}" "${NFT_TABLE}" m-"${config_id}"-"${direction}"-subnets) || exitWithError "${CNI_VERSION}" "Failed to add chain m-"${config_id}"-"${direction}"-subnets"
+        ip netns exec "$CNI_CONTAINERID" $(nft_add_rule "${table_type}" "${NFT_TABLE}" m-"${config_id}"-"${direction}" counter jump m-"${config_id}"-"${direction}"-subnets) || exitWithError "${CNI_VERSION}" "Failed to add rule: jump m-"${config_id}"-"${direction}"-subnets"
 
         if [[ $(get_array_len "$config" ".${direction}.subnets") == 0 ]]; then
             # example:  ingress: {subnets: []}  => translates to allow all subnets
@@ -188,14 +191,18 @@ create_rules_for_filtering() {
 }
 
 exitWithError() {
-    echo "{"cniVersion": "$(jq -r ".cniVersion" <<< "$stdin")","msg":"$1","code":101,"details":"$2"}"
+    local cni_version="$1"
+    local message="${2:-""}"
+    local details="${3:-""}"
+    echo "{\"cniVersion\": \"${cni_version}\",\"msg\":\"${message}\",\"code\":101,\"details\":\"${details}\"}"
     exit 1
 }
 
 exitWithSuccess() {
-    prev_result=$(get_object "${stdin}" ".prevResult")
+    local cni_version="$1"
+    local prev_result="$2"
     if [[ "$prev_result" == "null" ]]; then
-        echo "{"cniVersion": "$(jq -r ".cniVersion" <<< "$stdin")"}"
+        echo "{\"cniVersion\": \"$cni_version\"}"
     else
         echo "$prev_result"
     fi
@@ -220,7 +227,7 @@ main() {
             "K8S_POD_NAMESPACE="*)
                 pod_namespace=$(echo $i | awk -F'=' '{print $2}')
                 if [[ "$pod_namespace" == "" ]]; then
-                    exitWithError "Failed to parse pod namespace from CNI_ARGS"
+                    exitWithError "${CNI_VERSION}" "Failed to parse pod namespace from CNI_ARGS"
                 fi
             ;;
             esac
@@ -229,27 +236,27 @@ main() {
         mkdir -p /var/run/netns/
         ln -sfT "$CNI_NETNS" /var/run/netns/"${CNI_CONTAINERID}"
 
-        ip netns exec "$CNI_CONTAINERID" $(create_table ${NFT_EGRESS_TABLE_TYPE} ${NFT_TABLE}) || exitWithError "Failed to create table ${NFT_EGRESS_TABLE_TYPE} ${NFT_TABLE}"
-        ip netns exec "$CNI_CONTAINERID" $(create_table ${NFT_INGRESS_TABLE_TYPE} ${NFT_TABLE}) || exitWithError "Failed to create table ${NFT_EGRESS_TABLE_TYPE} ${NFT_TABLE}"
+        ip netns exec "$CNI_CONTAINERID" $(create_table ${NFT_EGRESS_TABLE_TYPE} ${NFT_TABLE}) || exitWithError "${CNI_VERSION}" "Failed to create table ${NFT_EGRESS_TABLE_TYPE} ${NFT_TABLE}"
+        ip netns exec "$CNI_CONTAINERID" $(create_table ${NFT_INGRESS_TABLE_TYPE} ${NFT_TABLE}) || exitWithError "${CNI_VERSION}" "Failed to create table ${NFT_EGRESS_TABLE_TYPE} ${NFT_TABLE}"
 
         # create base chains
-        ip netns exec "$CNI_CONTAINERID" $(create_base_chain ${NFT_INGRESS_TABLE_TYPE} ${NFT_TABLE} ${NFT_INGRESS_CHAIN} ${NFT_INGRESS_HOOK}) || exitWithError "Failed to create base chain ${NFT_INGRESS_CHAIN}"
-        ip netns exec "$CNI_CONTAINERID" $(create_base_chain ${NFT_EGRESS_TABLE_TYPE} ${NFT_TABLE} ${NFT_POSTROUTING_CHAIN} ${NFT_EGRESS_HOOK}) || exitWithError "Failed to create bridge base chain ${NFT_POSTROUTING_CHAIN}"
+        ip netns exec "$CNI_CONTAINERID" $(create_base_chain ${NFT_INGRESS_TABLE_TYPE} ${NFT_TABLE} ${NFT_INGRESS_CHAIN} ${NFT_INGRESS_HOOK}) || exitWithError "${CNI_VERSION}" "Failed to create base chain ${NFT_INGRESS_CHAIN}"
+        ip netns exec "$CNI_CONTAINERID" $(create_base_chain ${NFT_EGRESS_TABLE_TYPE} ${NFT_TABLE} ${NFT_POSTROUTING_CHAIN} ${NFT_EGRESS_HOOK}) || exitWithError "${CNI_VERSION}" "Failed to create bridge base chain ${NFT_POSTROUTING_CHAIN}"
 
         # filter chains
-        ip netns exec "$CNI_CONTAINERID" $(create_chain ${NFT_INGRESS_TABLE_TYPE} ${NFT_TABLE} m-ingress) || exitWithError "Failed to add chain m-ingress"
-        ip netns exec "$CNI_CONTAINERID" $(create_chain ${NFT_EGRESS_TABLE_TYPE} ${NFT_TABLE} m-egress) || exitWithError "Failed to add chain m-egress"
+        ip netns exec "$CNI_CONTAINERID" $(create_chain ${NFT_INGRESS_TABLE_TYPE} ${NFT_TABLE} m-ingress) || exitWithError "${CNI_VERSION}" "Failed to add chain m-ingress"
+        ip netns exec "$CNI_CONTAINERID" $(create_chain ${NFT_EGRESS_TABLE_TYPE} ${NFT_TABLE} m-egress) || exitWithError "${CNI_VERSION}" "Failed to add chain m-egress"
 
         # setup prerouting chain
-        ip netns exec "$CNI_CONTAINERID" $(nft_add_rule ${NFT_INGRESS_TABLE_TYPE} ${NFT_TABLE} ${NFT_INGRESS_CHAIN} ether type arp counter accept) || exitWithError "Failed to allow arp for ingress"
-        ip netns exec "$CNI_CONTAINERID" $(nft_add_rule ${NFT_INGRESS_TABLE_TYPE} ${NFT_TABLE} ${NFT_INGRESS_CHAIN} iifname $CNI_IFNAME counter jump m-ingress) || exitWithError "Failed to add rule: jump m-ingress"
+        ip netns exec "$CNI_CONTAINERID" $(nft_add_rule ${NFT_INGRESS_TABLE_TYPE} ${NFT_TABLE} ${NFT_INGRESS_CHAIN} ether type arp counter accept) || exitWithError "${CNI_VERSION}" "Failed to allow arp for ingress"
+        ip netns exec "$CNI_CONTAINERID" $(nft_add_rule ${NFT_INGRESS_TABLE_TYPE} ${NFT_TABLE} ${NFT_INGRESS_CHAIN} iifname $CNI_IFNAME counter jump m-ingress) || exitWithError "${CNI_VERSION}" "Failed to add rule: jump m-ingress"
 
         # setup postrouting chain
-        ip netns exec "$CNI_CONTAINERID" $(nft_add_rule ${NFT_EGRESS_TABLE_TYPE} ${NFT_TABLE} ${NFT_POSTROUTING_CHAIN} ether type arp counter accept) || exitWithError "Failed to allow arp for egress"
-        ip netns exec "$CNI_CONTAINERID" $(nft_add_rule ${NFT_EGRESS_TABLE_TYPE} ${NFT_TABLE} ${NFT_POSTROUTING_CHAIN} oifname $CNI_IFNAME counter jump m-egress) || exitWithError "Failed to add rule: jump m-egress"
+        ip netns exec "$CNI_CONTAINERID" $(nft_add_rule ${NFT_EGRESS_TABLE_TYPE} ${NFT_TABLE} ${NFT_POSTROUTING_CHAIN} ether type arp counter accept) || exitWithError "${CNI_VERSION}" "Failed to allow arp for egress"
+        ip netns exec "$CNI_CONTAINERID" $(nft_add_rule ${NFT_EGRESS_TABLE_TYPE} ${NFT_TABLE} ${NFT_POSTROUTING_CHAIN} oifname $CNI_IFNAME counter jump m-egress) || exitWithError "${CNI_VERSION}" "Failed to add rule: jump m-egress"
 
-        ip netns exec "$CNI_CONTAINERID" $(nft_add_rule "${NFT_EGRESS_TABLE_TYPE}" "${NFT_TABLE}" m-egress counter meta mark set meta mark "&" 0xfffcffff) || exitWithError "Failed to add rule: set meta mark & 0xfffcffff"
-        ip netns exec "$CNI_CONTAINERID" $(nft_add_rule "${NFT_INGRESS_TABLE_TYPE}" "${NFT_TABLE}" m-ingress counter meta mark set meta mark "&" 0xfffcffff) || exitWithError "Failed to add rule: set meta mark & 0xfffcffff"
+        ip netns exec "$CNI_CONTAINERID" $(nft_add_rule "${NFT_EGRESS_TABLE_TYPE}" "${NFT_TABLE}" m-egress counter meta mark set meta mark "&" 0xfffcffff) || exitWithError "${CNI_VERSION}" "Failed to add rule: set meta mark & 0xfffcffff"
+        ip netns exec "$CNI_CONTAINERID" $(nft_add_rule "${NFT_INGRESS_TABLE_TYPE}" "${NFT_TABLE}" m-ingress counter meta mark set meta mark "&" 0xfffcffff) || exitWithError "${CNI_VERSION}" "Failed to add rule: set meta mark & 0xfffcffff"
 
         _process_configmap() {
             local configmap_name="$1"
@@ -271,10 +278,10 @@ main() {
         ip netns exec "$CNI_CONTAINERID" $(nft_add_rule "${NFT_INGRESS_TABLE_TYPE}" "${NFT_TABLE}" m-ingress meta mark "&" 0x00030000 == 0x00030000 counter return) || exitWithError "${CNI_VERSION}" "Failed to add rule: mark & 0x00030000 == 0x00030000 counter return"
         ip netns exec "$CNI_CONTAINERID" $(nft_add_rule "${NFT_INGRESS_TABLE_TYPE}" "${NFT_TABLE}" m-ingress counter drop) || exitWithError "${CNI_VERSION}" "Failed to add rule: drop"
 
-        ip netns exec "$CNI_CONTAINERID" $(nft_add_rule "${NFT_EGRESS_TABLE_TYPE}" "${NFT_TABLE}" m-egress meta mark "&" 0x00030000 == 0x00030000 counter return) || exitWithError "Failed to add rule: mark & 0x00030000 == 0x00030000 counter return"
-        ip netns exec "$CNI_CONTAINERID" $(nft_add_rule "${NFT_EGRESS_TABLE_TYPE}" "${NFT_TABLE}" m-egress counter drop) || exitWithError "Failed to add rule: drop"
+        ip netns exec "$CNI_CONTAINERID" $(nft_add_rule "${NFT_EGRESS_TABLE_TYPE}" "${NFT_TABLE}" m-egress meta mark "&" 0x00030000 == 0x00030000 counter return) || exitWithError "${CNI_VERSION}" "Failed to add rule: mark & 0x00030000 == 0x00030000 counter return"
+        ip netns exec "$CNI_CONTAINERID" $(nft_add_rule "${NFT_EGRESS_TABLE_TYPE}" "${NFT_TABLE}" m-egress counter drop) || exitWithError "${CNI_VERSION}" "Failed to add rule: drop"
 
-        exitWithSuccess
+        exitWithSuccess "${CNI_VERSION}" "${CNI_PREV_RESULT}"
     ;;
 
     DEL)
@@ -283,11 +290,11 @@ main() {
     ;;
 
     VERSION)
-        echo "{"cniVersion":"0.3.1","supportedVersions":["0.1.0","0.2.0","0.3.0","0.3.1"]}"
+        echo "{\"cniVersion\":\"0.3.1\",\"supportedVersions\":[\"0.1.0\",\"0.2.0\",\"0.3.0\",\"0.3.1\"]}"
     ;;
 
     *)
-        exitWithError "Unrecognized CNI command: ${CNI_COMMAND}"
+        exitWithError "${CNI_VERSION}" "Unrecognized CNI command: ${CNI_COMMAND}"
     ;;
 
     esac
