@@ -10,8 +10,7 @@ CNI_PREV_RESULT="$(echo "$stdin" | jq -cr ".prevResult")"
 
 exec 2>> $logFile
 
-NFT_INGRESS_TABLE_TYPE=bridge
-NFT_EGRESS_TABLE_TYPE=bridge
+NFT_BRIDGE_TABLE=bridge
 NFT_TABLE=filter
 
 NFT_INGRESS_CHAIN=prerouting
@@ -239,27 +238,27 @@ main() {
         # Check API access
         kubectl --kubeconfig=/etc/cni/net.d/cidr-filtering.d/cidr-filtering.kubeconfig api-resources > /dev/null || exitWithError "${CNI_VERSION}" "Failed to reach kubernetes API server"
 
-        ip netns exec "$CNI_CONTAINERID" $(create_table ${NFT_EGRESS_TABLE_TYPE} ${NFT_TABLE}) || exitWithError "${CNI_VERSION}" "Failed to create table ${NFT_EGRESS_TABLE_TYPE} ${NFT_TABLE}"
-        ip netns exec "$CNI_CONTAINERID" $(create_table ${NFT_INGRESS_TABLE_TYPE} ${NFT_TABLE}) || exitWithError "${CNI_VERSION}" "Failed to create table ${NFT_EGRESS_TABLE_TYPE} ${NFT_TABLE}"
+        ip netns exec "$CNI_CONTAINERID" $(create_table ${NFT_BRIDGE_TABLE} ${NFT_TABLE}) || exitWithError "${CNI_VERSION}" "Failed to create table ${NFT_BRIDGE_TABLE} ${NFT_TABLE}"
+        ip netns exec "$CNI_CONTAINERID" $(create_table ${NFT_BRIDGE_TABLE} ${NFT_TABLE}) || exitWithError "${CNI_VERSION}" "Failed to create table ${NFT_BRIDGE_TABLE} ${NFT_TABLE}"
 
         # create base chains
-        ip netns exec "$CNI_CONTAINERID" $(create_base_chain ${NFT_INGRESS_TABLE_TYPE} ${NFT_TABLE} ${NFT_INGRESS_CHAIN} ${NFT_INGRESS_HOOK}) || exitWithError "${CNI_VERSION}" "Failed to create base chain ${NFT_INGRESS_CHAIN}"
-        ip netns exec "$CNI_CONTAINERID" $(create_base_chain ${NFT_EGRESS_TABLE_TYPE} ${NFT_TABLE} ${NFT_POSTROUTING_CHAIN} ${NFT_EGRESS_HOOK}) || exitWithError "${CNI_VERSION}" "Failed to create bridge base chain ${NFT_POSTROUTING_CHAIN}"
+        ip netns exec "$CNI_CONTAINERID" $(create_base_chain ${NFT_BRIDGE_TABLE} ${NFT_TABLE} ${NFT_INGRESS_CHAIN} ${NFT_INGRESS_HOOK}) || exitWithError "${CNI_VERSION}" "Failed to create base chain ${NFT_INGRESS_CHAIN}"
+        ip netns exec "$CNI_CONTAINERID" $(create_base_chain ${NFT_BRIDGE_TABLE} ${NFT_TABLE} ${NFT_POSTROUTING_CHAIN} ${NFT_EGRESS_HOOK}) || exitWithError "${CNI_VERSION}" "Failed to create bridge base chain ${NFT_POSTROUTING_CHAIN}"
 
         # filter chains
-        ip netns exec "$CNI_CONTAINERID" $(create_chain ${NFT_INGRESS_TABLE_TYPE} ${NFT_TABLE} m-ingress) || exitWithError "${CNI_VERSION}" "Failed to add chain m-ingress"
-        ip netns exec "$CNI_CONTAINERID" $(create_chain ${NFT_EGRESS_TABLE_TYPE} ${NFT_TABLE} m-egress) || exitWithError "${CNI_VERSION}" "Failed to add chain m-egress"
+        ip netns exec "$CNI_CONTAINERID" $(create_chain ${NFT_BRIDGE_TABLE} ${NFT_TABLE} m-ingress) || exitWithError "${CNI_VERSION}" "Failed to add chain m-ingress"
+        ip netns exec "$CNI_CONTAINERID" $(create_chain ${NFT_BRIDGE_TABLE} ${NFT_TABLE} m-egress) || exitWithError "${CNI_VERSION}" "Failed to add chain m-egress"
 
         # setup prerouting chain
-        ip netns exec "$CNI_CONTAINERID" $(nft_add_rule ${NFT_INGRESS_TABLE_TYPE} ${NFT_TABLE} ${NFT_INGRESS_CHAIN} ether type arp counter accept) || exitWithError "${CNI_VERSION}" "Failed to allow arp for ingress"
-        ip netns exec "$CNI_CONTAINERID" $(nft_add_rule ${NFT_INGRESS_TABLE_TYPE} ${NFT_TABLE} ${NFT_INGRESS_CHAIN} iifname $CNI_IFNAME counter jump m-ingress) || exitWithError "${CNI_VERSION}" "Failed to add rule: jump m-ingress"
+        ip netns exec "$CNI_CONTAINERID" $(nft_add_rule ${NFT_BRIDGE_TABLE} ${NFT_TABLE} ${NFT_INGRESS_CHAIN} ether type arp counter accept) || exitWithError "${CNI_VERSION}" "Failed to allow arp for ingress"
+        ip netns exec "$CNI_CONTAINERID" $(nft_add_rule ${NFT_BRIDGE_TABLE} ${NFT_TABLE} ${NFT_INGRESS_CHAIN} iifname $CNI_IFNAME counter jump m-ingress) || exitWithError "${CNI_VERSION}" "Failed to add rule: jump m-ingress"
 
         # setup postrouting chain
-        ip netns exec "$CNI_CONTAINERID" $(nft_add_rule ${NFT_EGRESS_TABLE_TYPE} ${NFT_TABLE} ${NFT_POSTROUTING_CHAIN} ether type arp counter accept) || exitWithError "${CNI_VERSION}" "Failed to allow arp for egress"
-        ip netns exec "$CNI_CONTAINERID" $(nft_add_rule ${NFT_EGRESS_TABLE_TYPE} ${NFT_TABLE} ${NFT_POSTROUTING_CHAIN} oifname $CNI_IFNAME counter jump m-egress) || exitWithError "${CNI_VERSION}" "Failed to add rule: jump m-egress"
+        ip netns exec "$CNI_CONTAINERID" $(nft_add_rule ${NFT_BRIDGE_TABLE} ${NFT_TABLE} ${NFT_POSTROUTING_CHAIN} ether type arp counter accept) || exitWithError "${CNI_VERSION}" "Failed to allow arp for egress"
+        ip netns exec "$CNI_CONTAINERID" $(nft_add_rule ${NFT_BRIDGE_TABLE} ${NFT_TABLE} ${NFT_POSTROUTING_CHAIN} oifname $CNI_IFNAME counter jump m-egress) || exitWithError "${CNI_VERSION}" "Failed to add rule: jump m-egress"
 
-        ip netns exec "$CNI_CONTAINERID" $(nft_add_rule "${NFT_EGRESS_TABLE_TYPE}" "${NFT_TABLE}" m-egress counter meta mark set meta mark "&" 0xfffcffff) || exitWithError "${CNI_VERSION}" "Failed to add rule: set meta mark & 0xfffcffff"
-        ip netns exec "$CNI_CONTAINERID" $(nft_add_rule "${NFT_INGRESS_TABLE_TYPE}" "${NFT_TABLE}" m-ingress counter meta mark set meta mark "&" 0xfffcffff) || exitWithError "${CNI_VERSION}" "Failed to add rule: set meta mark & 0xfffcffff"
+        ip netns exec "$CNI_CONTAINERID" $(nft_add_rule "${NFT_BRIDGE_TABLE}" "${NFT_TABLE}" m-egress counter meta mark set meta mark "&" 0xfffcffff) || exitWithError "${CNI_VERSION}" "Failed to add rule: set meta mark & 0xfffcffff"
+        ip netns exec "$CNI_CONTAINERID" $(nft_add_rule "${NFT_BRIDGE_TABLE}" "${NFT_TABLE}" m-ingress counter meta mark set meta mark "&" 0xfffcffff) || exitWithError "${CNI_VERSION}" "Failed to add rule: set meta mark & 0xfffcffff"
 
         _process_configmap() {
             local configmap_name="$1"
@@ -270,19 +269,19 @@ main() {
             # the json config in configmap is escaped when the configmap itself is obtained in json. To be able to work with it with jq, we need to remove '\n', '\'', spaces and leading/trailing character (which is an apostrophe)
             local config=$(kubectl --kubeconfig=/etc/cni/net.d/cidr-filtering.d/cidr-filtering.kubeconfig get cm ${configmap_name} -n ${configmap_namespace} -o json | jq -c '.data."config.json"' | sed 's#\\n##g;s#\\##g;s# ##g;s/^.//;s/.$//')
 
-            create_rules_for_filtering "$config_id" "$config" "${NFT_INGRESS_TABLE_TYPE}" "ingress"
-            create_rules_for_filtering "$config_id" "$config" "${NFT_EGRESS_TABLE_TYPE}" "egress"
+            create_rules_for_filtering "$config_id" "$config" "${NFT_BRIDGE_TABLE}" "ingress"
+            create_rules_for_filtering "$config_id" "$config" "${NFT_BRIDGE_TABLE}" "egress"
         }
         
         for configmap_name in $(kubectl --kubeconfig=/etc/cni/net.d/cidr-filtering.d/cidr-filtering.kubeconfig get cm -l${cni_spec_name},${cidr_filtering_cni_label} -n ${pod_namespace} -o jsonpath='{range .items[*]}{@.metadata.name}{"\n"}' | head -n -1); do
             _process_configmap $configmap_name $pod_namespace
         done
 
-        ip netns exec "$CNI_CONTAINERID" $(nft_add_rule "${NFT_INGRESS_TABLE_TYPE}" "${NFT_TABLE}" m-ingress meta mark "&" 0x00030000 == 0x00030000 counter return) || exitWithError "${CNI_VERSION}" "Failed to add rule: mark & 0x00030000 == 0x00030000 counter return"
-        ip netns exec "$CNI_CONTAINERID" $(nft_add_rule "${NFT_INGRESS_TABLE_TYPE}" "${NFT_TABLE}" m-ingress counter drop) || exitWithError "${CNI_VERSION}" "Failed to add rule: drop"
+        ip netns exec "$CNI_CONTAINERID" $(nft_add_rule "${NFT_BRIDGE_TABLE}" "${NFT_TABLE}" m-ingress meta mark "&" 0x00030000 == 0x00030000 counter return) || exitWithError "${CNI_VERSION}" "Failed to add rule: mark & 0x00030000 == 0x00030000 counter return"
+        ip netns exec "$CNI_CONTAINERID" $(nft_add_rule "${NFT_BRIDGE_TABLE}" "${NFT_TABLE}" m-ingress counter drop) || exitWithError "${CNI_VERSION}" "Failed to add rule: drop"
 
-        ip netns exec "$CNI_CONTAINERID" $(nft_add_rule "${NFT_EGRESS_TABLE_TYPE}" "${NFT_TABLE}" m-egress meta mark "&" 0x00030000 == 0x00030000 counter return) || exitWithError "${CNI_VERSION}" "Failed to add rule: mark & 0x00030000 == 0x00030000 counter return"
-        ip netns exec "$CNI_CONTAINERID" $(nft_add_rule "${NFT_EGRESS_TABLE_TYPE}" "${NFT_TABLE}" m-egress counter drop) || exitWithError "${CNI_VERSION}" "Failed to add rule: drop"
+        ip netns exec "$CNI_CONTAINERID" $(nft_add_rule "${NFT_BRIDGE_TABLE}" "${NFT_TABLE}" m-egress meta mark "&" 0x00030000 == 0x00030000 counter return) || exitWithError "${CNI_VERSION}" "Failed to add rule: mark & 0x00030000 == 0x00030000 counter return"
+        ip netns exec "$CNI_CONTAINERID" $(nft_add_rule "${NFT_BRIDGE_TABLE}" "${NFT_TABLE}" m-egress counter drop) || exitWithError "${CNI_VERSION}" "Failed to add rule: drop"
 
         exitWithSuccess "${CNI_VERSION}" "${CNI_PREV_RESULT}"
     ;;
