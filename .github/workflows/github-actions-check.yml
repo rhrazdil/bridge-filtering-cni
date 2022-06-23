@@ -21,7 +21,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  check-links:
+  check-generated:
     runs-on: ${{ fromJSON('["ubuntu-latest", "self-hosted"]')[github.repository == 'github/docs-internal'] }}
     steps:
       - name: Checkout
@@ -33,4 +33,12 @@ jobs:
       # For verification
       - name: Show if files changed
         run: ./hack/check.sh
+  check-unit:
+    runs-on: ${{ fromJSON('["ubuntu-latest", "self-hosted"]')[github.repository == 'github/docs-internal'] }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Run unit tests
+        run: make unit
 

@@ -2,13 +2,15 @@
 
 set -euo pipefail
 
-stdin=$(cat /dev/stdin)
-logFile="${LOGFILE:-/var/log/cidr-filtering-cni.log}"
+TEST=${TEST:-false}
+if [[ $TEST == false ]]; then
+    STDIN=$(cat /dev/STDIN)
+    CNI_VERSION="$(echo "$STDIN" | jq -r ".cniVersion")"
+    CNI_PREV_RESULT="$(echo "$STDIN" | jq -cr ".prevResult")"
+fi
 
-CNI_VERSION="$(echo "$stdin" | jq -r ".cniVersion")"
-CNI_PREV_RESULT="$(echo "$stdin" | jq -cr ".prevResult")"
-
-exec 2>> $logFile
+LOGFILE="${LOGFILE:-/var/log/cidr-filtering-cni.log}"
+exec 2>> $LOGFILE
 
 NFT_BRIDGE_TABLE=bridge
 NFT_TABLE=filter
@@ -59,7 +61,7 @@ get_ip_version() {
 create_table() {
     local type="$1"
     local name="$2"
-    echo "nft add table $type $name" | tee -a $logFile
+    echo "nft add table $type $name" | tee -a $LOGFILE
 }
 
 create_netdev_base_chain() {
@@ -68,7 +70,7 @@ create_netdev_base_chain() {
     local chain="$3"
     local hook="$4"
     local device="$5"
-    echo "nft add chain $type $name $chain { type filter hook $hook device $device priority -1; policy accept; }" | tee -a $logFile
+    echo "nft add chain $type $name $chain { type filter hook $hook device $device priority -1; policy accept; }" | tee -a $LOGFILE
 }
 
 create_base_chain() {
@@ -76,14 +78,14 @@ create_base_chain() {
     local name="$2"
     local chain="$3"
     local hook="$4"
-    echo "nft add chain $type $name $chain { type filter hook $hook priority -1; policy accept; }" | tee -a $logFile
+    echo "nft add chain $type $name $chain { type filter hook $hook priority -1; policy accept; }" | tee -a $LOGFILE
 }
 
 create_chain() {
     local type="$1"
     local name="$2"
     local chain="$3"
-    echo "nft add chain $type $name $chain" | tee -a $logFile
+    echo "nft add chain $type $name $chain" | tee -a $LOGFILE
 }
 
 nft_add_rule() {
@@ -91,7 +93,7 @@ nft_add_rule() {
     local table="$2"
     local chain="$3"
     set -- "${@:4}"
-    echo "nft add rule $type $table $chain $@" | tee -a $logFile
+    echo "nft add rule $type $table $chain $@" | tee -a $LOGFILE
 }
 
 create_rules_for_filtering() {
@@ -211,13 +213,13 @@ exitWithSuccess() {
 main() {
     case $CNI_COMMAND in
     ADD)
-        echo "CNI_NETNS: $CNI_NETNS" >> $logFile
-        echo "CNI_CONTAINERID: $CNI_CONTAINERID" >> $logFile
-        echo "STDIN: $stdin" >> $logFile
-        echo "CNI_ARGS: $CNI_ARGS" >> $logFile
+        echo "CNI_NETNS: $CNI_NETNS" >> $LOGFILE
+        echo "CNI_CONTAINERID: $CNI_CONTAINERID" >> $LOGFILE
+        echo "STDIN: $STDIN" >> $LOGFILE
+        echo "CNI_ARGS: $CNI_ARGS" >> $LOGFILE
 
         local cidr_filtering_cni_label="cidr-filtering-cni"
-        local cni_spec_name=$(echo "$stdin" | jq -r ".name")
+        local cni_spec_name=$(echo "$STDIN" | jq -r ".name")
         local pod_namespace=""
 
         for i in ${CNI_ARGS//;/ }
@@ -287,7 +289,7 @@ main() {
     ;;
 
     DEL)
-        echo "Delete $CNI_CONTAINERID" >> $logFile
+        echo "Delete $CNI_CONTAINERID" >> $LOGFILE
         rm -f /var/run/netns/"$CNI_CONTAINERID"
     ;;
 
@@ -302,4 +304,6 @@ main() {
     esac
 }
 
-main
+if [[ $TEST == false ]]; then
+    main
+fi
