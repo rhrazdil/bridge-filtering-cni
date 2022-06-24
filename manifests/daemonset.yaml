@@ -67,6 +67,8 @@ spec:
           value: bridge-filtering
         - name: CNI_CONF_DIR
           value: "/host/etc/cni/net.d"
+        - name: CNI_BIN_DIR
+          value: "/host/opt/cni/bin"
         - name: KUBECONFIG_PATH
           value: "/etc/cni/net.d/bridge-filtering.d/bridge-filtering.kubeconfig"
         - name: SCRIPT
@@ -82,8 +84,8 @@ spec:
           - /bin/bash
           - -c
           - |
-            echo $(SCRIPT) | base64 -d > /host/opt/cni/bin/$(CNI_NAME) &&\
-            chmod +x /host/opt/cni/bin/$(CNI_NAME)
+            echo $(SCRIPT) | base64 -d > $(CNI_BIN_DIR)/$(CNI_NAME) &&\
+            chmod +x $(CNI_BIN_DIR)/$(CNI_NAME)
 
             # Inspired by: https://tinyurl.com/y7r2knme
             CIDR_TEMP_KUBECONFIG="/tmp/bridge-filtering.kubeconfig"
@@ -91,7 +93,7 @@ spec:
             mkdir -p $(CNI_CONF_DIR)/bridge-filtering.d
             
             DEFAULT_KUBECONFIG_PATH="/etc/cni/net.d/bridge-filtering.d/bridge-filtering.kubeconfig"
-            sed -i "s#${DEFAULT_KUBECONFIG_PATH}#$(KUBECONFIG_PATH)#" /host/opt/cni/bin/$(CNI_NAME)
+            sed -i "s#${DEFAULT_KUBECONFIG_PATH}#$(KUBECONFIG_PATH)#" $(CNI_BIN_DIR)/$(CNI_NAME)
 
             SERVICE_ACCOUNT_PATH=/var/run/secrets/kubernetes.io/serviceaccount
             KUBE_CA_FILE=${KUBE_CA_FILE:-$SERVICE_ACCOUNT_PATH/ca.crt}
