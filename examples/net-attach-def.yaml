@@ -2,7 +2,7 @@
 kind: ConfigMap
 apiVersion: v1
 metadata:
-  name: local-network
+  name: egress-local-network
   namespace: default
   labels:
     cidr-filtering-cni: ""
@@ -10,27 +10,26 @@ metadata:
 data:
   config.json: |
     {
-      "ingress": {
-        "subnets": [
-          {
-            "subnet": {
-              "cidr": "192.168.66.0/24",
-              "except": [
-                "192.168.66.105"
-              ]
-            }
-          }
-        ]
-      },
       "egress": {
         "subnets": [
           {
             "subnet": {
-              "cidr": "192.168.66.0/24",
+              "cidr": "192.168.0.0/16",
               "except": [
-                "192.168.66.105"
+                "192.168.150.0/24",
+                "192.168.151.151"
               ]
             }
+          }
+        ],
+        "ports": [
+          {
+            "protocol": "TCP",
+            "port": "80"
+          },
+          {
+            "protocol": "tcp",
+            "port": "8080"
           }
         ]
       }
@@ -39,7 +38,7 @@ data:
 kind: ConfigMap
 apiVersion: v1
 metadata:
-  name: network-dhcp
+  name: local-network-dhcp
   namespace: default
   labels:
     cidr-filtering-cni: ""
@@ -55,78 +54,35 @@ data:
               "except": []
             }
           }
-        ]
-      }
-    }
----
-kind: ConfigMap
-apiVersion: v1
-metadata:
-  name: google-dns
-  namespace: default
-  labels:
-    cidr-filtering-cni: ""
-    br1-with-cidr-filtering: ""
-data:
-  config.json: |
-    {
-      "ingress": {
-        "subnets": [
-          {
-            "subnet": {
-              "cidr": "8.8.4.4/24",
-              "except": [
-                "8.8.4.5"
-              ]
-            }
-          }
-        ]
-      },
-      "egress": {
-        "subnets": [
-          {
-            "subnet": {
-              "cidr": "8.8.4.4/24"
-            }
-          }
-        ]
-      }
-    }
----
-kind: ConfigMap
-apiVersion: v1
-metadata:
-  name: all-ports
-  namespace: default
-  labels:
-    cidr-filtering-cni: ""
-    br1-with-cidr-filtering: ""
-data:
-  config.json: |
-    {
-      "ingress": {
+        ],
         "ports": [
-          {
-          "protocol": "TCP",
-            "port": "1-65535"
-          },
-          {
-          "protocol": "udp",
-            "port": "1-65535"
-          }
-        ]
-      },
-      "egress": {
-        "ports": [
-          {
-            "protocol": "TCP",
-            "port": "1-65535"
-          },
           {
             "protocol": "udp",
-            "port": "1-65535"
+            "port": "67"
           }
         ]
+      }
+    }
+---
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: ingress-local-network
+  labels:
+    cidr-filtering-cni: ""
+    br1-with-cidr-filtering: ""
+data:
+  config.json: |
+    {
+      "ingress": {
+        "subnets": [
+          {
+            "subnet": {
+              "cidr": "192.168.0.0/16"
+            }
+          }
+        ],
+        "ports": []
       }
     }
 ---
