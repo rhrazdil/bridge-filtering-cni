@@ -271,21 +271,21 @@ main() {
         netns_exec_nft "$(nft_add_rule ${NFT_BRIDGE_TABLE} ${NFT_TABLE} ${NFT_POSTROUTING_CHAIN} oifname $CNI_IFNAME counter jump "${CNI_IFNAME}"-egress)"
 
         _process_configmap() {
-            local configmap_name="$1"
-            local configmap_namespace="$2"
-            local config_id="$(echo "${configmap_name}${configmap_namespace}" | sha1sum )"
+            local configmap_namespaced_name="$1"
+            local configmap_config="$2"
+            local config_id="$(echo "${configmap_namespaced_name}" | sha1sum )"
             config_id="${config_id:0:5}" # use first 5 characters to identify configuration specified in a configmap
 
-            # the json config in configmap is escaped when the configmap itself is obtained in json. To be able to work with it with jq, we need to remove '\n', '\'', spaces and leading/trailing character (which is an apostrophe)
-            local config=$(kubectl --kubeconfig=${KUBECONFIG_PATH} get cm ${configmap_name} -n ${configmap_namespace} -o json | jq -c '.data."config.json"' | sed 's#\\n##g;s#\\##g;s# ##g;s/^.//;s/.$//')
-
-            create_rules_for_filtering "$config_id" "$config" "${NFT_BRIDGE_TABLE}" "ingress"
-            create_rules_for_filtering "$config_id" "$config" "${NFT_BRIDGE_TABLE}" "egress"
+            create_rules_for_filtering "$config_id" "$configmap_config" "${NFT_BRIDGE_TABLE}" "ingress"
+            create_rules_for_filtering "$config_id" "$configmap_config" "${NFT_BRIDGE_TABLE}" "egress"
         }
-        
-        for configmap_name in $(kubectl --kubeconfig=${KUBECONFIG_PATH} get cm -l${cni_spec_name},${cidr_filtering_cni_label} -n ${pod_namespace} -o jsonpath='{range .items[*]}{@.metadata.name}{"\n"}' | head -n -1); do
-            _process_configmap $configmap_name $pod_namespace
+
+        referenced_configmaps=$(kubectl --kubeconfig=${KUBECONFIG_PATH} get cm -l${cni_spec_name},${cidr_filtering_cni_label} -n ${pod_namespace} -o json)
+        local referenced_configmaps_count=$(get_array_len "$referenced_configmaps" ".items")
+        for (( i = 0; i < $((referenced_configmaps_count)); i++ )); do
+            _process_configmap "$(printf "%s" "${referenced_configmaps}" | jq -rc ".items[$i].metadata.name",".items[$i].metadata.namespace")" "$(printf "%s" "${referenced_configmaps}" | jq -rc ".items[$i].data.config")"
         done
+
 
         netns_exec_nft "$(nft_add_rule "${NFT_BRIDGE_TABLE}" "${NFT_TABLE}" "${CNI_IFNAME}"-ingress counter drop)"
         netns_exec_nft "$(nft_add_rule "${NFT_BRIDGE_TABLE}" "${NFT_TABLE}" "${CNI_IFNAME}"-egress counter drop)"
