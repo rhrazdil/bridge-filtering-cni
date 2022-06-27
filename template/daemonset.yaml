@@ -2,7 +2,7 @@
 kind: ClusterRole
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
-  name: cidr-filtering
+  name: bridge-filtering
 rules:
   - apiGroups:
       - ""
@@ -15,56 +15,56 @@ rules:
 kind: ClusterRoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
-  name: cidr-filtering
+  name: bridge-filtering
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: cidr-filtering
+  name: bridge-filtering
 subjects:
 - kind: ServiceAccount
-  name: cidr-filtering
+  name: bridge-filtering
   namespace: kube-system
 ---
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: cidr-filtering
+  name: bridge-filtering
   namespace: kube-system
 ---
 apiVersion: apps/v1
 kind: DaemonSet
 metadata:
-  name: cidr-filtering-cni-ds
+  name: bridge-filtering-ds
   namespace: kube-system
   labels:
     tier: node
-    app: cidr-filtering-cni
-    name: cidr-filtering-cni
+    app: bridge-filtering
+    name: bridge-filtering
 spec:
   selector:
     matchLabels:
-      name: cidr-filtering-cni
+      name: bridge-filtering
   updateStrategy:
     type: RollingUpdate
   template:
     metadata:
       labels:
         tier: node
-        app: cidr-filtering-cni
-        name: cidr-filtering-cni
+        app: bridge-filtering
+        name: bridge-filtering
     spec:
       tolerations:
       - operator: Exists
         effect: NoSchedule
       - operator: Exists
         effect: NoExecute
-      serviceAccountName: cidr-filtering
+      serviceAccountName: bridge-filtering
       initContainers:
-      - name: cidr-filtering-cni-copier
+      - name: bridge-filtering-copier
         image: registry.access.redhat.com/ubi8/ubi:8.6-754
         env:
         - name: CNI_NAME
-          value: cidr-filtering-cni
+          value: bridge-filtering
         - name: CNI_CONF_DIR
           value: "/host/etc/cni/net.d"
         - name: SCRIPT
@@ -84,9 +84,9 @@ spec:
             chmod +x /host/opt/cni/bin/$(CNI_NAME)
 
             # Inspired by: https://tinyurl.com/y7r2knme
-            CIDR_TEMP_KUBECONFIG="/tmp/cidr-filtering.kubeconfig"
-            CIDR_KUBECONFIG_FILE_HOST=$(CNI_CONF_DIR)/cidr-filtering.d/cidr-filtering.kubeconfig
-            mkdir -p $(CNI_CONF_DIR)/cidr-filtering.d
+            CIDR_TEMP_KUBECONFIG="/tmp/bridge-filtering.kubeconfig"
+            CIDR_KUBECONFIG_FILE_HOST=$(CNI_CONF_DIR)/bridge-filtering.d/bridge-filtering.kubeconfig
+            mkdir -p $(CNI_CONF_DIR)/bridge-filtering.d
             
 
             SERVICE_ACCOUNT_PATH=/var/run/secrets/kubernetes.io/serviceaccount
@@ -127,15 +127,15 @@ spec:
                 server: ${KUBERNETES_SERVICE_PROTOCOL:-https}://[${KUBERNETES_SERVICE_HOST}]:${KUBERNETES_SERVICE_PORT}
                 $TLS_CFG
             users:
-            - name: cidr-filtering
+            - name: bridge-filtering
               user:
                 token: "${SERVICEACCOUNT_TOKEN}"
             contexts:
-            - name: cidr-filtering-context
+            - name: bridge-filtering-context
               context:
                 cluster: local
-                user: cidr-filtering
-            current-context: cidr-filtering-context
+                user: bridge-filtering
+            current-context: bridge-filtering-context
             EOF
 
               # Atomically move the temp kubeconfig to its permanent home.
@@ -144,7 +144,7 @@ spec:
               warn "Doesn't look like we're running in a kubernetes environment (no serviceaccount token)"
             fi
       containers:
-      - name: cidr-filtering-cni
+      - name: bridge-filtering
         image: registry.access.redhat.com/ubi8/ubi:8.6-754
         command: ["sleep"]
         args: ["infinity"]

@@ -3,7 +3,7 @@
 set -euo pipefail
 
 stdin=$(cat /dev/stdin)
-logFile="${LOGFILE:-/var/log/cidr-filtering-cni.log}"
+logFile="${LOGFILE:-/var/log/bridge-filtering.log}"
 
 CNI_VERSION="$(echo "$stdin" | jq -r ".cniVersion")"
 CNI_PREV_RESULT="$(echo "$stdin" | jq -cr ".prevResult")"
@@ -216,7 +216,7 @@ main() {
         echo "STDIN: $stdin" >> $logFile
         echo "CNI_ARGS: $CNI_ARGS" >> $logFile
 
-        local cidr_filtering_cni_label="cidr-filtering-cni"
+        local cidr_filtering_cni_label="bridge-filtering"
         local cni_spec_name=$(echo "$stdin" | jq -r ".name")
         local pod_namespace=""
 
