@@ -5,6 +5,7 @@ set -euo pipefail
 stdin=$(cat /dev/stdin)
 logFile="${LOGFILE:-/var/log/bridge-filtering.log}"
 
+KUBECONFIG_PATH="${KUBECONFIG_PATH:-/etc/cni/net.d/bridge-filtering.d/bridge-filtering.kubeconfig}"
 CNI_VERSION="$(echo "$stdin" | jq -r ".cniVersion")"
 CNI_PREV_RESULT="$(echo "$stdin" | jq -cr ".prevResult")"
 
@@ -116,15 +117,16 @@ create_rules_for_filtering() {
         local direction="$4"
         ip netns exec "$CNI_CONTAINERID" $(create_chain "${table_type}" "${NFT_TABLE}" "${CNI_IFNAME}"-"${config_id}"-"${direction}") || exitWithError "${CNI_VERSION}" "Failed to add chain "${CNI_IFNAME}"-${config_id}-${direction}"
         ip netns exec "$CNI_CONTAINERID" $(nft_add_rule "${table_type}" "${NFT_TABLE}" "${CNI_IFNAME}"-"${direction}" "${match_iface}" "$CNI_IFNAME" counter jump "${CNI_IFNAME}"-"${config_id}"-"${direction}") || exitWithError "${CNI_VERSION}" "Failed to add rule: jump "${CNI_IFNAME}"-${config_id}-${direction}"
+        ip netns exec "$CNI_CONTAINERID" $(nft_add_rule "${table_type}" "${NFT_TABLE}" "${CNI_IFNAME}"-"${config_id}"-"${direction}" counter meta mark set meta mark "&" 0xfffcffff) || exitWithError "${CNI_VERSION}" "Failed to add rule: set meta mark & 0xfffcffff"
     }
 
     _create_subnet_rule() {
         local subnet=$1
-        if [[ "$(get_object "${subnet}" ".subnet.except")" != "null" ]]; then
-            for_json_array "${subnet}" ".subnet.except" _drop_ip
+        if [[ "$(get_object "${subnet}" ".except")" != "null" ]]; then
+            for_json_array "${subnet}" ".except" _drop_ip
         fi
 
-        if [[ "$(get_object "${subnet}" ".subnet.cidr")" == "null" ]]; then
+        if [[ "$(get_object "${subnet}" ".cidr")" == "null" ]]; then
             exitWithError "${CNI_VERSION}" "cidr must be specified."
         fi
         _accept_cidr "${subnet}"
@@ -137,7 +139,7 @@ create_rules_for_filtering() {
 
     _accept_cidr() {
         local subnet="$1"
-        local cidr=$(echo "${subnet}" | jq -r ".subnet.cidr")
+        local cidr=$(echo "${subnet}" | jq -r ".cidr")
         ip netns exec "$CNI_CONTAINERID" $(nft_add_rule ${table_type} ${NFT_TABLE} "${CNI_IFNAME}"-${config_id}-${direction}-subnets ${match_iface} $CNI_IFNAME $(get_ip_version "${cidr}") ${match_addr} ${cidr} counter meta mark set mark or 0x20000)
     }
 
@@ -187,6 +189,11 @@ create_rules_for_filtering() {
             for_json_array "$config" ".${direction}.ports" _accept_port
         fi
     fi
+
+    if [[ "$is_filtering_chain_created" == true ]]; then
+        ip netns exec "$CNI_CONTAINERID" $(nft_add_rule "${table_type}" "${NFT_TABLE}" "${CNI_IFNAME}"-"${config_id}"-"${direction}" meta mark "&" 0x00030000 == 0x00030000 counter accept) || exitWithError "${CNI_VERSION}" "Failed to add rule: mark & 0x00030000 == 0x00030000 counter accept"
+    fi
+
 }
 
 exitWithError() {
@@ -236,7 +243,7 @@ main() {
         ln -sfT "$CNI_NETNS" /var/run/netns/"${CNI_CONTAINERID}"
 
         # Check API access
-        kubectl --kubeconfig=/etc/cni/net.d/cidr-filtering.d/cidr-filtering.kubeconfig api-resources > /dev/null || exitWithError "${CNI_VERSION}" "Failed to reach kubernetes API server"
+        kubectl --kubeconfig=${KUBECONFIG_PATH} api-resources > /dev/null || exitWithError "${CNI_VERSION}" "Failed to reach kubernetes API server" "kubeconfig path: $KUBECONFIG_PATH"
 
         ip netns exec "$CNI_CONTAINERID" $(create_table ${NFT_BRIDGE_TABLE} ${NFT_TABLE}) || exitWithError "${CNI_VERSION}" "Failed to create table ${NFT_BRIDGE_TABLE} ${NFT_TABLE}"
         ip netns exec "$CNI_CONTAINERID" $(create_table ${NFT_BRIDGE_TABLE} ${NFT_TABLE}) || exitWithError "${CNI_VERSION}" "Failed to create table ${NFT_BRIDGE_TABLE} ${NFT_TABLE}"
@@ -257,9 +264,6 @@ main() {
         ip netns exec "$CNI_CONTAINERID" $(nft_add_rule ${NFT_BRIDGE_TABLE} ${NFT_TABLE} ${NFT_POSTROUTING_CHAIN} ether type arp counter accept) || exitWithError "${CNI_VERSION}" "Failed to allow arp for egress"
         ip netns exec "$CNI_CONTAINERID" $(nft_add_rule ${NFT_BRIDGE_TABLE} ${NFT_TABLE} ${NFT_POSTROUTING_CHAIN} oifname $CNI_IFNAME counter jump "${CNI_IFNAME}"-egress) || exitWithError "${CNI_VERSION}" "Failed to add rule: jump "${CNI_IFNAME}"-egress"
 
-        ip netns exec "$CNI_CONTAINERID" $(nft_add_rule "${NFT_BRIDGE_TABLE}" "${NFT_TABLE}" "${CNI_IFNAME}"-egress counter meta mark set meta mark "&" 0xfffcffff) || exitWithError "${CNI_VERSION}" "Failed to add rule: set meta mark & 0xfffcffff"
-        ip netns exec "$CNI_CONTAINERID" $(nft_add_rule "${NFT_BRIDGE_TABLE}" "${NFT_TABLE}" "${CNI_IFNAME}"-ingress counter meta mark set meta mark "&" 0xfffcffff) || exitWithError "${CNI_VERSION}" "Failed to add rule: set meta mark & 0xfffcffff"
-
         _process_configmap() {
             local configmap_name="$1"
             local configmap_namespace="$2"
@@ -267,20 +271,17 @@ main() {
             config_id="${config_id:0:5}" # use first 5 characters to identify configuration specified in a configmap
 
             # the json config in configmap is escaped when the configmap itself is obtained in json. To be able to work with it with jq, we need to remove '\n', '\'', spaces and leading/trailing character (which is an apostrophe)
-            local config=$(kubectl --kubeconfig=/etc/cni/net.d/cidr-filtering.d/cidr-filtering.kubeconfig get cm ${configmap_name} -n ${configmap_namespace} -o json | jq -c '.data."config.json"' | sed 's#\\n##g;s#\\##g;s# ##g;s/^.//;s/.$//')
+            local config=$(kubectl --kubeconfig=${KUBECONFIG_PATH} get cm ${configmap_name} -n ${configmap_namespace} -o json | jq -c '.data."config.json"' | sed 's#\\n##g;s#\\##g;s# ##g;s/^.//;s/.$//')
 
             create_rules_for_filtering "$config_id" "$config" "${NFT_BRIDGE_TABLE}" "ingress"
             create_rules_for_filtering "$config_id" "$config" "${NFT_BRIDGE_TABLE}" "egress"
         }
         
-        for configmap_name in $(kubectl --kubeconfig=/etc/cni/net.d/cidr-filtering.d/cidr-filtering.kubeconfig get cm -l${cni_spec_name},${cidr_filtering_cni_label} -n ${pod_namespace} -o jsonpath='{range .items[*]}{@.metadata.name}{"\n"}' | head -n -1); do
+        for configmap_name in $(kubectl --kubeconfig=${KUBECONFIG_PATH} get cm -l${cni_spec_name},${cidr_filtering_cni_label} -n ${pod_namespace} -o jsonpath='{range .items[*]}{@.metadata.name}{"\n"}' | head -n -1); do
             _process_configmap $configmap_name $pod_namespace
         done
 
-        ip netns exec "$CNI_CONTAINERID" $(nft_add_rule "${NFT_BRIDGE_TABLE}" "${NFT_TABLE}" "${CNI_IFNAME}"-ingress meta mark "&" 0x00030000 == 0x00030000 counter return) || exitWithError "${CNI_VERSION}" "Failed to add rule: mark & 0x00030000 == 0x00030000 counter return"
         ip netns exec "$CNI_CONTAINERID" $(nft_add_rule "${NFT_BRIDGE_TABLE}" "${NFT_TABLE}" "${CNI_IFNAME}"-ingress counter drop) || exitWithError "${CNI_VERSION}" "Failed to add rule: drop"
-
-        ip netns exec "$CNI_CONTAINERID" $(nft_add_rule "${NFT_BRIDGE_TABLE}" "${NFT_TABLE}" "${CNI_IFNAME}"-egress meta mark "&" 0x00030000 == 0x00030000 counter return) || exitWithError "${CNI_VERSION}" "Failed to add rule: mark & 0x00030000 == 0x00030000 counter return"
         ip netns exec "$CNI_CONTAINERID" $(nft_add_rule "${NFT_BRIDGE_TABLE}" "${NFT_TABLE}" "${CNI_IFNAME}"-egress counter drop) || exitWithError "${CNI_VERSION}" "Failed to add rule: drop"
 
         exitWithSuccess "${CNI_VERSION}" "${CNI_PREV_RESULT}"

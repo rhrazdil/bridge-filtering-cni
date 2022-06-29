@@ -67,6 +67,8 @@ spec:
           value: bridge-filtering
         - name: CNI_CONF_DIR
           value: "/host/etc/cni/net.d"
+        - name: KUBECONFIG_PATH
+          value: "/etc/cni/net.d/bridge-filtering.d/bridge-filtering.kubeconfig"
         - name: SCRIPT
           value: "SCRIPT_PLACEHOLDER"
         securityContext:
@@ -88,6 +90,8 @@ spec:
             CIDR_KUBECONFIG_FILE_HOST=$(CNI_CONF_DIR)/bridge-filtering.d/bridge-filtering.kubeconfig
             mkdir -p $(CNI_CONF_DIR)/bridge-filtering.d
             
+            DEFAULT_KUBECONFIG_PATH="/etc/cni/net.d/bridge-filtering.d/bridge-filtering.kubeconfig"
+            sed -i "s#${DEFAULT_KUBECONFIG_PATH}#$(KUBECONFIG_PATH)#" /host/opt/cni/bin/$(CNI_NAME)
 
             SERVICE_ACCOUNT_PATH=/var/run/secrets/kubernetes.io/serviceaccount
             KUBE_CA_FILE=${KUBE_CA_FILE:-$SERVICE_ACCOUNT_PATH/ca.crt}
