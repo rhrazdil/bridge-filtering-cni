@@ -88,7 +88,11 @@ data:
             "cidr": "192.168.0.0/16"
           }
         ],
-        "ports": []
+        "ports": [
+          {
+            "protocol": "tcp"
+          }
+        ]
       }
     }
 ---

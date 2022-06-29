@@ -1,7 +1,7 @@
 # bridge-filtering
 
 This CNI plugin allows the user to control traffic flow at the IP address or port level (OSI layer 3 or 4) for particular applications in the Kubernetes cluster, thus specifying how a pod is allowed to communicate with various network "entities". The pod interface must be a port of a bridge (for example a kubevirt virtual machine connected with bridge binding method). By default, all ingress and egress traffic is denied.
-Users may create special ConfigMaps in the pod namespace to indicate allowed ingress or egress connections.
+Users may create special `ConfigMaps` in the pod namespace to indicate allowed ingress or egress connections.
 This can be done for network layers L3 and L4. The supported L4 protocols are UDP and TCP.
 
 Since the nftable rules implementing traffic filtering are created when a pod is being created, the CNI cannot update the provisioned rules if those are updated in the `ConfigMaps`.
@@ -80,9 +80,7 @@ The second label, `br1-with-cidr-filtering` refers to the `NetworkAttachmentDefi
 > **_NOTE:_**  A ConfigMap may refer to many NetworkAttachmentDefinition specs. The order in which ConfigMaps are process is not defined.
 
 
-To allow a pod to communicate to external entities, let's create the following `ConfigMap`, that allows pod to reach all ports
-on a local network:
-
+To allow a pod to communicate to external entities, let's create the following `ConfigMap`:
 ```yaml
 ---
 kind: ConfigMap
@@ -92,20 +90,18 @@ metadata:
   namespace: default
   labels:
     bridge-filtering: ""
-    br1-with-cidr-filtering: ""
+    br1-with-bridge-filtering: ""
 data:
   config.json: |
     {
       "egress": {
         "subnets": [
           {
-            "subnet": {
-              "cidr": "192.168.0.0/16",
-              "except": [
-                "192.168.150.0/24",
-                "192.168.151.151"
-              ]
-            }
+            "cidr": "192.168.0.0/16",
+            "except": [
+              "192.168.150.0/24",
+              "192.168.151.151"
+            ]
           }
         ],
         "ports": [
@@ -125,7 +121,7 @@ data:
 The `egress.subnets` attribute allows pod to reach any IP address in subnet `192.168.0.0/16`, except for subnet `192.168.150.0/24` and `192.168.151.151`.
 The `egress.ports` attribute allows pod to reach ports 80, and 8080 over TCP protocol.
 
-To allow any webserver responses to be allowed to reach the pod, create the following ConfigMap:
+To allow any webserver responses to reach the pod, create the following `ConfigMap`:
 ```yaml
 kind: ConfigMap
 apiVersion: v1
@@ -133,25 +129,30 @@ metadata:
   name: ingress-local-network
   labels:
     bridge-filtering: ""
-    br1-with-cidr-filtering: ""
+    br1-with-bridge-filtering: ""
 data:
   config.json: |
     {
       "ingress": {
         "subnets": [
           {
-            "subnet": {
-              "cidr": "192.168.0.0/16"
-            }
+            "cidr": "192.168.0.0/16"
           }
         ],
-        "ports": []
+        "ports": [
+          {
+            "protocol": "tcp"
+          }
+        ]
       }
     }
 ```
 
 The `ingress.subnets` attribute allows traffic from any IP address of subnet `192.168.0.0/16`, to reach the pod.
-The `ingress.ports` attribute set to an empty array allows all ports (on both, TCP and UDP protocols) to be reachable on the pod.
+The `ingress.ports` attribute contains an object that specifies only `protocol` to match `tcp`, that allows all TCP ports to be reachable on a pod.
+
+> **_NOTE:_**  To allow only TCP traffic on all ports, use `{"protocol": "TCP"}`, without specifying `port` key.
+Similarly may be allowed ports without specifying protocol, eg. `{"port": "80-8080"}`. In that case, both UDP and TCP traffic with matching port will be allowed. 
 
 When using a secondary network where clients obtain IP addresses from a DHCP server, users must allow egress to  the `255.255.255.255` IP address, thus allowing the `DHCP Discover` message to be sent.
 
@@ -163,16 +164,14 @@ metadata:
   namespace: default
   labels:
     bridge-filtering: ""
-    br1-with-cidr-filtering: ""
+    br1-with-bridge-filtering: ""
 data:
   config.json: |
     {
       "egress": {
         "subnets": [
           {
-            "subnet": {
-              "cidr": "255.255.255.255/32"
-            }
+            "cidr": "255.255.255.255/32"
           }
         ],
         "ports": [
@@ -183,6 +182,11 @@ data:
         ]
       },
       "ingress": {
+        "subnets": [
+          {
+            "cidr": "192.168.66.0/24"
+          }
+        ],
         "ports": [
           {
             "protocol": "udp",
@@ -203,16 +207,19 @@ data:
   - provided CIDR subnets are matched against packet destination address (packet receiver)
   - by default, all subnets are denied. Subnets configured in multiple `ConfigMaps` are combined using logical OR.
   - ports match destination port of a packet
-- subnets: array of subnets to allow. If this field is not specified, no subnets are allowed. If empty array is specified, all subnets are allowed
+- subnets: array of subnets to allow. If this field is not specified, or if it's empty, no subnets are allowed.
   - cidr
     - a particular CIDR (Ex. "192.168.1.1/24","2001:db9::/64") that is allowed
+    - leave empty or unspecified to match all IPs.
   - except
     - list of CIDRs or IP ranges for which traffic should be dropped
-- ports: array of ports to allow. If this field is not specified, no ports are allowed. If empty array is specified, all ports are allowed
+- ports: array of ports to allow. If this field is not specified, or it it's empty, no ports are allowed.
   - protocol
     - protocol name in string. Supported protocols are tcp, udp
+    - leave empty or unspecified to match all protocols
   - port
     - destination port or port range in string (Ex. "80", "80-8000", "80,81,82")
+    - leave empty or unspecified to match all ports
 
-> **_NOTE:_**  Do not except IP addresses that are to be allowed in another ConfigMap, as excepted IP addresses are dropped immediately.
+> **_NOTE:_**  Do not except IP addresses that are to be allowed in a different `ConfigMap`, as packets with excepted IP addresses are dropped immediately.
 

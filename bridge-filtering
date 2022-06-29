@@ -123,24 +123,25 @@ create_rules_for_filtering() {
     _create_subnet_rule() {
         local subnet=$1
         if [[ "$(get_object "${subnet}" ".except")" != "null" ]]; then
-            for_json_array "${subnet}" ".except" _drop_ip
+            for_json_array "${subnet}" ".except" _drop_subnet
         fi
 
-        if [[ "$(get_object "${subnet}" ".cidr")" == "null" ]]; then
-            exitWithError "${CNI_VERSION}" "cidr must be specified."
+        if [[ "$(get_object "${subnet}" ".cidr")" == "null" || "$(get_object "${subnet}" ".cidr")" == "" ]]; then
+            ip netns exec "$CNI_CONTAINERID" $(nft_add_rule ${table_type} ${NFT_TABLE} "${CNI_IFNAME}"-${config_id}-${direction}-subnets ${match_iface} $CNI_IFNAME counter meta mark set mark or 0x20000) ||  exitWithError "${CNI_VERSION}" "Failed to add rule to allow all subnets in chain: ${CNI_IFNAME}-${config_id}-${direction}-subnets"
+        else
+            _accept_cidr "${subnet}"
         fi
-        _accept_cidr "${subnet}"
     }
 
-    _drop_ip() {
-        local ip="$1"
-        ip netns exec "$CNI_CONTAINERID" $(nft_add_rule ${table_type} ${NFT_TABLE} "${CNI_IFNAME}"-${config_id}-${direction}-subnets ${match_iface} $CNI_IFNAME $(get_ip_version "${ip}") ${match_addr} ${ip} counter drop)
+    _drop_subnet() {
+        local subnet="$1"
+        ip netns exec "$CNI_CONTAINERID" $(nft_add_rule ${table_type} ${NFT_TABLE} "${CNI_IFNAME}"-${config_id}-${direction}-subnets ${match_iface} $CNI_IFNAME $(get_ip_version "${subnet}") ${match_addr} ${subnet} counter drop) ||  exitWithError "${CNI_VERSION}" "Failed to drop subnet ${subnet} in chain: ${CNI_IFNAME}-${config_id}-${direction}-subnets"
     }
 
     _accept_cidr() {
         local subnet="$1"
         local cidr=$(echo "${subnet}" | jq -r ".cidr")
-        ip netns exec "$CNI_CONTAINERID" $(nft_add_rule ${table_type} ${NFT_TABLE} "${CNI_IFNAME}"-${config_id}-${direction}-subnets ${match_iface} $CNI_IFNAME $(get_ip_version "${cidr}") ${match_addr} ${cidr} counter meta mark set mark or 0x20000)
+        ip netns exec "$CNI_CONTAINERID" $(nft_add_rule ${table_type} ${NFT_TABLE} "${CNI_IFNAME}"-${config_id}-${direction}-subnets ${match_iface} $CNI_IFNAME $(get_ip_version "${cidr}") ${match_addr} ${cidr} counter meta mark set mark or 0x20000) ||  exitWithError "${CNI_VERSION}" "Failed to allow cidr ${cidr} in chain: ${CNI_IFNAME}-${config_id}-${direction}-subnets"
     }
 
     _accept_port() {
@@ -148,52 +149,49 @@ create_rules_for_filtering() {
         local port=$(echo "$ports" | jq -r ".port")
         local protocol=$(echo "$ports" | jq -r ".protocol")
 
-        if [[ "$port" == "null" || "$protocol" == "null" || "$port" == "" || "$protocol" == "" ]]; then
-            exitWithError "${CNI_VERSION}" "Port and protocol must be specified."
+        if [[ "$port" == "null" || "$port" == "" ]]; then
+            if [[ "$protocol" == "null" || "$protocol" == "" ]]; then
+                ip netns exec "$CNI_CONTAINERID" $(nft_add_rule ${table_type} ${NFT_TABLE} "${CNI_IFNAME}"-${config_id}-${direction}-ports ${match_iface} $CNI_IFNAME counter meta mark set meta mark "|" 0x00010000) ||  exitWithError "${CNI_VERSION}" "Failed to allow all ports on all protocols in chain: ${CNI_IFNAME}-${config_id}-${direction}-ports"
+            else
+                ip netns exec "$CNI_CONTAINERID" $(nft_add_rule ${table_type} ${NFT_TABLE} "${CNI_IFNAME}"-${config_id}-${direction}-ports ${match_iface} $CNI_IFNAME ip protocol ${protocol,,} counter meta mark set meta mark "|" 0x00010000) ||  exitWithError "${CNI_VERSION}" "Failed to allow all ports on ipv4 ${protocol} in chain: ${CNI_IFNAME}-${config_id}-${direction}-ports"
+                ip netns exec "$CNI_CONTAINERID" $(nft_add_rule ${table_type} ${NFT_TABLE} "${CNI_IFNAME}"-${config_id}-${direction}-ports ${match_iface} $CNI_IFNAME ip6 nexthdr ${protocol,,} counter meta mark set meta mark "|" 0x00010000) ||  exitWithError "${CNI_VERSION}" "Failed to allow all ports on ipv6 ${protocol} in chain: ${CNI_IFNAME}-${config_id}-${direction}-ports"
+            fi
         else
-            ip netns exec "$CNI_CONTAINERID" $(nft_add_rule ${table_type} ${NFT_TABLE} "${CNI_IFNAME}"-${config_id}-${direction}-ports ${match_iface} $CNI_IFNAME ${protocol,,} dport ${port} counter meta mark set meta mark "|" 0x00010000)
+            if [[ "$protocol" == "null" || "$protocol" == "" ]]; then
+                ip netns exec "$CNI_CONTAINERID" $(nft_add_rule ${table_type} ${NFT_TABLE} "${CNI_IFNAME}"-${config_id}-${direction}-ports ${match_iface} $CNI_IFNAME tcp dport ${port} counter meta mark set meta mark "|" 0x00010000) ||  exitWithError "${CNI_VERSION}" "Failed to allow port(s) ${port} on tcp in chain: ${CNI_IFNAME}-${config_id}-${direction}-ports"
+                ip netns exec "$CNI_CONTAINERID" $(nft_add_rule ${table_type} ${NFT_TABLE} "${CNI_IFNAME}"-${config_id}-${direction}-ports ${match_iface} $CNI_IFNAME udp dport ${port} counter meta mark set meta mark "|" 0x00010000) ||  exitWithError "${CNI_VERSION}" "Failed to allow port(s) ${port} on udp in chain: ${CNI_IFNAME}-${config_id}-${direction}-ports"
+            else
+                ip netns exec "$CNI_CONTAINERID" $(nft_add_rule ${table_type} ${NFT_TABLE} "${CNI_IFNAME}"-${config_id}-${direction}-ports ${match_iface} $CNI_IFNAME ${protocol,,} dport ${port} counter meta mark set meta mark "|" 0x00010000) ||  exitWithError "${CNI_VERSION}" "Failed to allow port(s) ${port} on ${protocol} in chain: ${CNI_IFNAME}-${config_id}-${direction}-ports"
+            fi
         fi
     }
 
     local is_filtering_chain_created=false
-    # handle ip subnet
-    if [[ $(echo "$config" | jq -r ".${direction}.subnets") != "null" ]]; then
+    if [[ $(echo "$config" | jq -r ".${direction}.subnets") != "null" || $(echo "$config" | jq -r ".${direction}.ports") != "null" ]]; then
         _create_filtering_chain "${config_id}" "${config}" "${table_type}" "${direction}"
         is_filtering_chain_created=true
+    fi
+
+    # handle ip subnet
+    if [[ $(echo "$config" | jq -r ".${direction}.subnets") != "null" && $(get_array_len "$config" ".${direction}.subnets") > 0 ]]; then
 
         ip netns exec "$CNI_CONTAINERID" $(create_chain "${table_type}" "${NFT_TABLE}" "${CNI_IFNAME}"-"${config_id}"-"${direction}"-subnets) || exitWithError "${CNI_VERSION}" "Failed to add chain "${CNI_IFNAME}"-"${config_id}"-"${direction}"-subnets"
         ip netns exec "$CNI_CONTAINERID" $(nft_add_rule "${table_type}" "${NFT_TABLE}" "${CNI_IFNAME}"-"${config_id}"-"${direction}" counter jump "${CNI_IFNAME}"-"${config_id}"-"${direction}"-subnets) || exitWithError "${CNI_VERSION}" "Failed to add rule: jump "${CNI_IFNAME}"-"${config_id}"-"${direction}"-subnets"
 
-        if [[ $(get_array_len "$config" ".${direction}.subnets") == 0 ]]; then
-            # example:  ingress: {subnets: []}  => translates to allow all subnets
-            ip netns exec "$CNI_CONTAINERID" $(nft_add_rule ${table_type} ${NFT_TABLE} "${CNI_IFNAME}"-"${config_id}"-"${direction}"-subnets counter meta mark set mark or 0x20000) || exitWithError "${CNI_VERSION}" "Failed to allow all L3 traffic"
-        else
-            for_json_array "$config" ".${direction}.subnets" _create_subnet_rule
-        fi
+        for_json_array "$config" ".${direction}.subnets" _create_subnet_rule
     fi
 
     # handle ports
-    if [[ $(echo "$config" | jq -r ".${direction}.ports") != "null" ]]; then
-        if [[ "$is_filtering_chain_created" == false ]]; then
-            _create_filtering_chain "${config_id}" "${config}" "${table_type}" "${direction}"
-            is_filtering_chain_created=true
-        fi
-
+    if [[ $(echo "$config" | jq -r ".${direction}.ports") != "null" && $(get_array_len "$config" ".${direction}.ports") > 0 ]]; then
         ip netns exec "$CNI_CONTAINERID" $(create_chain "${table_type}" "${NFT_TABLE}" "${CNI_IFNAME}"-"${config_id}"-"${direction}"-ports) || exitWithError "${CNI_VERSION}" "Failed to add chain "${CNI_IFNAME}"-"${config_id}"-"${direction}"-ports"
         ip netns exec "$CNI_CONTAINERID" $(nft_add_rule "${table_type}" "${NFT_TABLE}" "${CNI_IFNAME}"-"${config_id}"-"${direction}" counter jump "${CNI_IFNAME}"-"${config_id}"-"${direction}"-ports) || exitWithError "${CNI_VERSION}" "Failed to add rule: jump "${CNI_IFNAME}"-"${config_id}"-"${direction}"-ports"
         
-        if [[ $(get_array_len "$config" ".${direction}.ports") == 0 ]]; then
-            # example:  "egress": {"ports": []}  => translates to allow all ports
-            ip netns exec "$CNI_CONTAINERID" $(nft_add_rule ${table_type} ${NFT_TABLE} "${CNI_IFNAME}"-"${config_id}"-"${direction}"-ports counter meta mark set meta mark "|" 0x00010000) || exitWithError "${CNI_VERSION}" "Failed to allow all L4 traffic when not explicit config provided"
-        else
-            for_json_array "$config" ".${direction}.ports" _accept_port
-        fi
+        for_json_array "$config" ".${direction}.ports" _accept_port
     fi
 
     if [[ "$is_filtering_chain_created" == true ]]; then
         ip netns exec "$CNI_CONTAINERID" $(nft_add_rule "${table_type}" "${NFT_TABLE}" "${CNI_IFNAME}"-"${config_id}"-"${direction}" meta mark "&" 0x00030000 == 0x00030000 counter accept) || exitWithError "${CNI_VERSION}" "Failed to add rule: mark & 0x00030000 == 0x00030000 counter accept"
     fi
-
 }
 
 exitWithError() {
