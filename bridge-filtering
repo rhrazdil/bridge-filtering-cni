@@ -49,8 +49,7 @@ for_json_array() {
 
 get_ip_version() {
     local ip_address="$1"
-    if [[ "$ip_address" =~ .*:.* ]]
-    then
+    if [[ "$ip_address" =~ .*:.* ]]; then
         echo "ip6"
     else
         echo "ip"
@@ -107,7 +106,7 @@ create_rules_for_filtering() {
     local direction="$4"
     local match_addr="saddr"
     if [[ "$direction" == "egress" ]]; then
-        local match_addr="daddr"
+        match_addr="daddr"
     fi
     local match_iface="iifname"
     if [[ "$direction" == "egress" ]]; then
