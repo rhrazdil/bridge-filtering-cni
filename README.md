@@ -50,7 +50,7 @@ The `example-network` specifies two CNI plugins, the first cni in the above is a
 is the `bridge-filtering`, that handles configuration of nftables rules on the pod.
 
 By default, all ingress and egress traffic is dropped.
-To allow specific ingress and egress CIDR blocks/ports, create ConfigMaps(s) referencing a NetworkAttachmentDefinition spec.config name in the ConfigMap's label.
+To allow specific ingress and egress CIDR blocks/ports, create ConfigMap(s) referencing a NetworkAttachmentDefinition spec.config name in the ConfigMap's label.
 Each ConfigMap additionally needs to have `bridge-filtering` label to be enabled for the bridge-filtering plugin.
 
 The following manifest is an example of a minimal `ConfigMap`, that doesn't yet allow any traffic. Since denying all traffic is done by default, it doesn't needed to exist.
