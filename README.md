@@ -19,6 +19,14 @@ If a configuration in a `ConfigMap` is changed, all the pods that use it need to
 
 To install the CNI plugin, create the `manifests/daemonset.yaml` resource.
 
+
+## Limitations
+
+The plugin is currently not using conntrack to allow response traffic. The user is expected to configure ingress/egress policies accordingly.
+That means that for clients, egress configuration may filter desired IP subnets and ports and ingress configuration should allow all traffic or filter by IP subnet
+without filtering by ports.
+Vice versa for servers.
+
 ## Usage
 
 When using the bridge-filtering plugin, all ingress and egress traffic is dropped by default. To enable bridge-filtering plugin, include it in the
