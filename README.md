@@ -77,7 +77,7 @@ metadata:
     bridge-filtering: ""
     br1-with-cidr-filtering: ""
 data:
-  config.json: |
+  config: |
     {
       "ingress": {},
       "egress": {}
@@ -104,7 +104,7 @@ metadata:
     bridge-filtering: ""
     br1-with-bridge-filtering: ""
 data:
-  config.json: |
+  config: |
     {
       "egress": {
         "subnets": [
@@ -144,7 +144,7 @@ metadata:
     bridge-filtering: ""
     br1-with-bridge-filtering: ""
 data:
-  config.json: |
+  config: |
     {
       "ingress": {
         "subnets": [
@@ -178,7 +178,7 @@ metadata:
     bridge-filtering: ""
     br1-with-bridge-filtering: ""
 data:
-  config.json: |
+  config: |
     {
       "egress": {
         "subnets": [
