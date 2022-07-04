@@ -1,11 +1,14 @@
 # bridge-filtering
 
-This CNI plugin allows the user to control traffic flow at the IP address or port level (OSI layer 3 or 4) for particular applications in the Kubernetes cluster, thus specifying how a pod is allowed to communicate with various network "entities". The pod interface must be a port of a bridge (for example a kubevirt virtual machine connected with bridge binding method). By default, all ingress and egress traffic is denied.
-Users may create special `ConfigMaps` in the pod namespace to indicate allowed ingress or egress connections.
-This can be done for network layers L3 and L4. The supported L4 protocols are UDP and TCP.
+This CNI plugin allows the user to control traffic flow at the IP address or port level (OSI layer 3 or 4) for particular applications in the Kubernetes cluster, thus specifying how a pod is allowed to communicate with various network "entities".
+The supported L4 protocols are UDP and TCP.
 
-Since the nftable rules implementing traffic filtering are created when a pod is being created, the CNI cannot update the provisioned rules if those are updated in the `ConfigMaps`.
-If a configuration in a `ConfigMap` is changed, all the pods that use it need to be re-created, in order to have up-to-date configuration.
+The pod interface **must** be a port of a bridge (for example a kubevirt virtual machine connected with bridge binding method). By default, all ingress and egress traffic is denied.
+
+Users may create special `ConfigMaps` in the pod namespace to indicate allowed ingress or egress connections.
+
+Since the nftable rules implementing traffic filtering are only applied when a pod is created, the CNI **cannot** update the provisioned rules if those are updated in any of the referenced `ConfigMap`.
+If a referenced configuration is changed, **all the pods that use it must be re-created in order to have up-to-date configuration**.
 
 > **_NOTE:_**  The CNI plugin doesn't currently support scenarios that involve IPAM assigning an IP on the pod interface. 
 
@@ -19,18 +22,18 @@ If a configuration in a `ConfigMap` is changed, all the pods that use it need to
 
 To install the CNI plugin, create the `manifests/daemonset.yaml` resource.
 
-
 ## Limitations
 
 The plugin is currently not using conntrack to allow response traffic. The user is expected to configure ingress/egress policies accordingly.
-That means that for clients, egress configuration may filter desired IP subnets and ports and ingress configuration should allow all traffic or filter by IP subnet
-without filtering by ports.
-Vice versa for servers.
+Policies applying to clients (in a client/server architecture) must remember to accept the return traffic for their requests.
 
 ## Usage
 
-When using the bridge-filtering plugin, all ingress and egress traffic is dropped by default. To enable bridge-filtering plugin, include it in the
-NetworkAttachmentDefinition. See the following example:
+When your Kubernetes workloads use the bridge-filtering plugin, all ingress and egress traffic is dropped by default. Allowed traffic must be explicitly specified in `ConfigMap`(s), that reference particular `NetworkAttachmentDefinition`.¨
+
+### Making a pod subject to bridge-filtering policies
+
+Enable bridge-filtering for pod by adding specifying it in `NetworkAttachmentDefinition`.
 
 ```yaml
 ---
@@ -54,14 +57,16 @@ spec:
   }'
 ```
 
-The `example-network` specifies two CNI plugins, the first cni in the above is a `cnv-bridge`, connecting pods to linux-bridge `br1`, and the second
-is the `bridge-filtering`, that handles configuration of nftables rules on the pod.
+The `example-network` specifies two CNI plugins, the first cni is a `cnv-bridge`, connecting pods to linux-bridge `br1`, and the second
+is the `bridge-filtering` plugin, that creates filtering rules on the pod.
+Once a pod is subject to these policies, all ingress and egress traffic is dropped.
 
-By default, all ingress and egress traffic is dropped.
-To allow specific ingress and egress CIDR blocks/ports, create ConfigMap(s) referencing a NetworkAttachmentDefinition spec.config name in the ConfigMap's label.
-Each ConfigMap additionally needs to have `bridge-filtering` label to be enabled for the bridge-filtering plugin.
+### Allowing traffic to pass 
 
-The following manifest is an example of a minimal `ConfigMap`, that doesn't yet allow any traffic. Since denying all traffic is done by default, it doesn't needed to exist.
+To allow specific ingress and egress datagrams, create `ConfigMap`(s) that reference a `NetworkAttachmentDefinition` spec.config name in the `ConfigMap`'s label.
+Each `ConfigMap` additionally needs to have the `bridge-filtering` label to be enable the bridge-filtering plugin (this is to ensure the plugin only processes `ConfigMaps` that are intended for it).
+
+The following manifest is an example of a minimal `ConfigMap`, that doesn't yet allow any traffic. This configuration is redundant, since denying all traffic is done by default.
 
 ```yaml
 kind: ConfigMap
@@ -79,16 +84,15 @@ data:
     }
 ```
 
-Notice the labels of the ConfigMap.
-The first label, `bridge-filtering` ensures that the `ConfigMap` configuration is collected by the CNI plugin, as
-the plugin only lists `ConfigMaps` with this label.
-The second label, `br1-with-cidr-filtering` refers to the `NetworkAttachmentDefinition` spec name, in the CNI configuration JSON.
+
+Notice the labels of the ConfigMap:
+1. `bridge-filtering` label ensures that the `ConfigMap` configuration is collected by the CNI plugin, as the plugin only lists `ConfigMaps` with this label.
+2. The second label, `br1-with-cidr-filtering` refers to the `NetworkAttachmentDefinition` spec name, in the CNI configuration JSON.
 
 
 > **_NOTE:_**  A ConfigMap may refer to many NetworkAttachmentDefinition specs. The order in which ConfigMaps are process is not defined.
 
-
-To allow a pod to communicate to external entities, let's create the following `ConfigMap`:
+To allow a pod to communicate to external entities, create the following `ConfigMap`:
 ```yaml
 ---
 kind: ConfigMap
@@ -126,10 +130,11 @@ data:
     }
 ```
 
-The `egress.subnets` attribute allows pod to reach any IP address in subnet `192.168.0.0/16`, except for subnet `192.168.150.0/24` and `192.168.151.151`.
-The `egress.ports` attribute allows pod to reach ports 80, and 8080 over TCP protocol.
+- the `egress.subnets` attribute allows pod to reach any IP address in subnet `192.168.0.0/16`, except for subnet `192.168.150.0/24` and `192.168.151.151`.
+- the `egress.ports` attribute allows pod to reach ports 80, and 8080 over TCP protocol.
 
-To allow any webserver responses to reach the pod, create the following `ConfigMap`:
+
+Now that we have allowed the client VM to send requests to a server, allow server responses to reach the pod. Create the following `ConfigMap`:
 ```yaml
 kind: ConfigMap
 apiVersion: v1
@@ -156,13 +161,12 @@ data:
     }
 ```
 
-The `ingress.subnets` attribute allows traffic from any IP address of subnet `192.168.0.0/16`, to reach the pod.
-The `ingress.ports` attribute contains an object that specifies only `protocol` to match `tcp`, that allows all TCP ports to be reachable on a pod.
+- the `ingress.subnets` attribute allows traffic from any IP address of subnet `192.168.0.0/16`, to reach the pod.
+- the `ingress.ports` attribute contains an object that specifies only `protocol` to match `tcp`, that allows all TCP ports to be reachable on a pod.
 
-> **_NOTE:_**  To allow only TCP traffic on all ports, use `{"protocol": "TCP"}`, without specifying `port` key.
-Similarly may be allowed ports without specifying protocol, eg. `{"port": "80-8080"}`. In that case, both UDP and TCP traffic with matching port will be allowed. 
+> **_NOTE:_**  Similarly, if protocol is not important for filtering, it may be omitted. For example `{"port": "80-8080"}` allows ports `80-8080` for both, TCP and UDP. If neither port of protocol is specified in a `ingress.ports` array object, all ports on all protocols are allowed.
 
-When using a secondary network where clients obtain IP addresses from a DHCP server, users must allow egress to  the `255.255.255.255` IP address, thus allowing the `DHCP Discover` message to be sent.
+When using a network where clients obtain IP addresses from a DHCP server, users must allow egress to the `255.255.255.255` IP address and thus allowing the `DHCP Discover` message to be sent.
 
 ```yaml
 kind: ConfigMap
@@ -215,13 +219,13 @@ data:
   - provided CIDR subnets are matched against packet destination address (packet receiver)
   - by default, all subnets are denied. Subnets configured in multiple `ConfigMaps` are combined using logical OR.
   - ports match destination port of a packet
-- subnets: array of subnets to allow. If this field is not specified, or if it's empty, no subnets are allowed.
+- subnets: array of subnets to allow. If this field is not specified or it's empty, no subnets are allowed.
   - cidr
     - a particular CIDR (Ex. "192.168.1.1/24","2001:db9::/64") that is allowed
     - leave empty or unspecified to match all IPs.
   - except
     - list of CIDRs or IP ranges for which traffic should be dropped
-- ports: array of ports to allow. If this field is not specified, or it it's empty, no ports are allowed.
+- ports: array of ports to allow. If this field is not specified or it's empty, no ports are allowed.
   - protocol
     - protocol name in string. Supported protocols are tcp, udp
     - leave empty or unspecified to match all protocols
