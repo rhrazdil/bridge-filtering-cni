@@ -2,129 +2,95 @@
 kind: ConfigMap
 apiVersion: v1
 metadata:
-  name: local-network
+  name: egress-local-network
   namespace: default
   labels:
-    cidr-filtering-cni: ""
-    br1-with-cidr-filtering: ""
-data:
-  config.json: |
-    {
-      "ingress": {
-        "subnets": [
-          {
-            "subnet": {
-              "cidr": "192.168.66.0/24",
-              "except": [
-                "192.168.66.105"
-              ]
-            }
-          }
-        ]
-      },
-      "egress": {
-        "subnets": [
-          {
-            "subnet": {
-              "cidr": "192.168.66.0/24",
-              "except": [
-                "192.168.66.105"
-              ]
-            }
-          }
-        ]
-      }
-    }
----
-kind: ConfigMap
-apiVersion: v1
-metadata:
-  name: network-dhcp
-  namespace: default
-  labels:
-    cidr-filtering-cni: ""
-    br1-with-cidr-filtering: ""
+    bridge-filtering: ""
+    br1-with-bridge-filtering: ""
 data:
   config.json: |
     {
       "egress": {
         "subnets": [
           {
-            "subnet": {
-              "cidr": "255.255.255.255/32",
-              "except": []
-            }
+            "cidr": "192.168.0.0/16",
+            "except": [
+              "192.168.150.0/24",
+              "192.168.151.151"
+            ]
           }
-        ]
-      }
-    }
----
-kind: ConfigMap
-apiVersion: v1
-metadata:
-  name: google-dns
-  namespace: default
-  labels:
-    cidr-filtering-cni: ""
-    br1-with-cidr-filtering: ""
-data:
-  config.json: |
-    {
-      "ingress": {
-        "subnets": [
-          {
-            "subnet": {
-              "cidr": "8.8.4.4/24",
-              "except": [
-                "8.8.4.5"
-              ]
-            }
-          }
-        ]
-      },
-      "egress": {
-        "subnets": [
-          {
-            "subnet": {
-              "cidr": "8.8.4.4/24"
-            }
-          }
-        ]
-      }
-    }
----
-kind: ConfigMap
-apiVersion: v1
-metadata:
-  name: all-ports
-  namespace: default
-  labels:
-    cidr-filtering-cni: ""
-    br1-with-cidr-filtering: ""
-data:
-  config.json: |
-    {
-      "ingress": {
-        "ports": [
-          {
-          "protocol": "TCP",
-            "port": "1-65535"
-          },
-          {
-          "protocol": "udp",
-            "port": "1-65535"
-          }
-        ]
-      },
-      "egress": {
+        ],
         "ports": [
           {
             "protocol": "TCP",
-            "port": "1-65535"
+            "port": "80"
           },
           {
+            "protocol": "tcp",
+            "port": "8080"
+          }
+        ]
+      }
+    }
+---
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: local-network-dhcp
+  namespace: default
+  labels:
+    bridge-filtering: ""
+    br1-with-bridge-filtering: ""
+data:
+  config.json: |
+    {
+      "egress": {
+        "subnets": [
+          {
+            "cidr": "255.255.255.255/32"
+          }
+        ],
+        "ports": [
+          {
             "protocol": "udp",
-            "port": "1-65535"
+            "port": "67"
+          }
+        ]
+      },
+      "ingress": {
+        "subnets": [
+          {
+            "cidr": "192.168.66.0/24"
+          }
+        ],
+        "ports": [
+          {
+            "protocol": "udp",
+            "port": "68"
+          }
+        ]
+      }
+    }
+---
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: ingress-local-network
+  labels:
+    bridge-filtering: ""
+    br1-with-bridge-filtering: ""
+data:
+  config.json: |
+    {
+      "ingress": {
+        "subnets": [
+          {
+            "cidr": "192.168.0.0/16"
+          }
+        ],
+        "ports": [
+          {
+            "protocol": "tcp"
           }
         ]
       }
@@ -137,14 +103,14 @@ metadata:
 spec:
   config: '{
     "cniVersion": "0.3.1",
-    "name": "br1-with-cidr-filtering",
+    "name": "br1-with-bridge-filtering",
     "plugins": [
       {
         "type": "cnv-bridge",
         "bridge": "br1"
       },
       {
-        "type": "cidr-filtering-cni"
+        "type": "bridge-filtering"
       }
     ]
   }'
