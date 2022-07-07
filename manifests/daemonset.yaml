@@ -1,4 +1,9 @@
 ---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: bridge-filtering-cni
+---
 kind: ClusterRole
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
@@ -23,19 +28,19 @@ roleRef:
 subjects:
 - kind: ServiceAccount
   name: bridge-filtering
-  namespace: kube-system
+  namespace: bridge-filtering-cni
 ---
 apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: bridge-filtering
-  namespace: kube-system
+  namespace: bridge-filtering-cni
 ---
 apiVersion: apps/v1
 kind: DaemonSet
 metadata:
   name: bridge-filtering-ds
-  namespace: kube-system
+  namespace: bridge-filtering-cni
   labels:
     tier: node
     app: bridge-filtering
