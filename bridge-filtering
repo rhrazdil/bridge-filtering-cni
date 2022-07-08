@@ -116,7 +116,7 @@ create_rules_for_filtering() {
     local policy_filtering_chain="${CNI_IFNAME}-${config_id}-${direction}"
 
     # check JSON is well-formatted and can be parsed with jq
-    echo "$config" | jq &> /dev/null || exitWithError "${CNI_VERSION}" "Failed to parse JSON config, check formatting"
+    echo "$config" | jq "keys" &> /dev/null || exitWithError "${CNI_VERSION}" "Failed to parse JSON config, check formatting"
     
     _create_policy_filtering_chain() {
         local config_id="$1"
