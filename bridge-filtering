@@ -280,7 +280,7 @@ main() {
             create_rules_for_filtering "$config_id" "$configmap_config" "${NFT_BRIDGE_TABLE}" "egress"
         }
 
-        referenced_configmaps=$(kubectl --kubeconfig=${KUBECONFIG_PATH} get cm -l${cni_spec_name},${cidr_filtering_cni_label} -n ${pod_namespace} -o json)
+        referenced_configmaps=$(kubectl --cache-dir=/var/cache/bridge-filtering --kubeconfig=${KUBECONFIG_PATH} get cm -l${cni_spec_name},${cidr_filtering_cni_label} -n ${pod_namespace} -o json)
         local referenced_configmaps_count=$(get_array_len "$referenced_configmaps" ".items")
         for (( i = 0; i < $((referenced_configmaps_count)); i++ )); do
             _process_configmap "$(printf "%s" "${referenced_configmaps}" | jq -rc ".items[$i].metadata.name",".items[$i].metadata.namespace")" "$(printf "%s" "${referenced_configmaps}" | jq -rc ".items[$i].data.config")"
