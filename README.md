@@ -22,6 +22,8 @@ If a referenced configuration is changed, **all the pods that use it must be re-
 
 To install the CNI plugin, create the `manifests/daemonset.yaml` resource.
 
+For OpenShift cluster, use `manifests/daemonset_openshift.yaml`.
+
 ## Limitations
 
 The plugin is currently not using conntrack to allow response traffic. The user is expected to configure ingress/egress policies accordingly.

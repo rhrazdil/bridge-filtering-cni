@@ -71,20 +71,20 @@ spec:
         - name: CNI_NAME
           value: bridge-filtering
         - name: CNI_CONF_DIR
-          value: "/host/etc/cni/net.d"
+          value: "/host/etc/kubernetes/cni/net.d"
         - name: CNI_BIN_DIR
-          value: "/host/opt/cni/bin"
+          value: "/host/var/lib/cni/bin"
         - name: KUBECONFIG_PATH
-          value: "/etc/cni/net.d/bridge-filtering.d/bridge-filtering.kubeconfig"
+          value: "/etc/kubernetes/cni/net.d/bridge-filtering.d/bridge-filtering.kubeconfig"
         - name: SCRIPT
           value: "SCRIPT_PLACEHOLDER"
         securityContext:
           privileged: true
         volumeMounts:
         - name: cni
-          mountPath: /host/etc/cni/net.d
+          mountPath: /host/etc/kubernetes/cni/net.d
         - name: cnibin
-          mountPath: /host/opt/cni/bin
+          mountPath: /host/var/lib/cni/bin
         command:
           - /bin/bash
           - -c
@@ -170,7 +170,28 @@ spec:
       volumes:
       - name: cni
         hostPath:
-          path: /etc/cni/net.d
+          path: /etc/kubernetes/cni/net.d
       - name: cnibin
         hostPath:
-          path: /opt/cni/bin
+          path: /var/lib/cni/bin
+---
+apiVersion: security.openshift.io/v1
+kind: SecurityContextConstraints
+metadata:
+  name: bridge-filtering
+allowPrivilegedContainer: true
+allowHostDirVolumePlugin: true
+readOnlyRootFilesystem: false
+allowHostIPC: false
+allowHostNetwork: false
+allowHostPID: false
+allowHostPorts: false
+runAsUser:
+  type: RunAsAny
+seLinuxContext:
+  type: RunAsAny
+users:
+- system:serviceaccount:bridge-filtering-cni:bridge-filtering
+volumes:
+- hostPath
+- projected
