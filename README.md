@@ -12,6 +12,8 @@ If a referenced configuration is changed, **all the pods that use it must be re-
 
 > **_NOTE:_**  The CNI plugin doesn't currently support scenarios that involve IPAM assigning an IP on the pod interface. 
 
+This project provides a subset of features that are otherwise available through [k8snetworkplumbingwg/multi-networkpolicy](https://github.com/k8snetworkplumbingwg/multi-networkpolicy). However, unlike Multi Network Policies, the bridge-filtering CNI is operating on netfilter's `bridge` table, which makes it suitable for KubeVirt.
+
 ## Requirements
 
 - jq
