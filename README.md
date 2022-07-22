@@ -1,7 +1,7 @@
 # bridge-filtering
 
 This CNI plugin allows the user to control traffic flow at the IP address or port level (OSI layer 3 or 4) for particular applications in the Kubernetes cluster, thus specifying how a pod is allowed to communicate with various network "entities".
-The supported L4 protocols are UDP and TCP.
+The supported L4 protocols are UDP and TCP. All ICMP traffic is allowed by `bridge-filtering-cni`.
 
 The pod interface **must** be a port of a bridge (for example a kubevirt virtual machine connected with bridge binding method). By default, all ingress and egress traffic is denied.
 

@@ -262,6 +262,15 @@ main() {
         netns_exec_nft "$(create_chain ${NFT_BRIDGE_TABLE} ${NFT_TABLE} "${CNI_IFNAME}"-ingress)"
         netns_exec_nft "$(create_chain ${NFT_BRIDGE_TABLE} ${NFT_TABLE} "${CNI_IFNAME}"-egress)"
 
+        # accept icmp
+        netns_exec_nft "$(nft_add_rule ${NFT_BRIDGE_TABLE} ${NFT_TABLE} ${CNI_IFNAME}-ingress ip protocol icmp counter accept)"
+        netns_exec_nft "$(nft_add_rule ${NFT_BRIDGE_TABLE} ${NFT_TABLE} ${CNI_IFNAME}-egress ip protocol icmp counter accept)"
+
+        # accept icmpv6
+        netns_exec_nft "$(nft_add_rule ${NFT_BRIDGE_TABLE} ${NFT_TABLE} ${CNI_IFNAME}-ingress ip6 nexthdr icmpv6 counter accept)"
+        netns_exec_nft "$(nft_add_rule ${NFT_BRIDGE_TABLE} ${NFT_TABLE} ${CNI_IFNAME}-egress ip6 nexthdr icmpv6 counter accept)"
+        
+
         # setup prerouting chain
         netns_exec_nft "$(nft_add_rule ${NFT_BRIDGE_TABLE} ${NFT_TABLE} ${NFT_INGRESS_CHAIN} ether type arp counter accept)"
         netns_exec_nft "$(nft_add_rule ${NFT_BRIDGE_TABLE} ${NFT_TABLE} ${NFT_INGRESS_CHAIN} iifname $CNI_IFNAME counter jump "${CNI_IFNAME}"-ingress)"
