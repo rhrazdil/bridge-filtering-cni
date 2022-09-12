@@ -31,6 +31,9 @@ For OpenShift cluster, use `manifests/daemonset_openshift.yaml`.
 The plugin is currently not using conntrack to allow response traffic. The user is expected to configure ingress/egress policies accordingly.
 Policies applying to clients (in a client/server architecture) must remember to accept the return traffic for their requests.
 
+Connection tracking for the `bridge` family was only released on [kernel 5.3](https://wiki.nftables.org/wiki-nftables/index.php/Bridge_filtering);
+as such, this feature would be unavailable for any kernels older than that.
+
 ## Usage
 
 When your Kubernetes workloads use the bridge-filtering plugin, all ingress and egress traffic is dropped by default. Allowed traffic must be explicitly specified in `ConfigMap`(s), that reference particular `NetworkAttachmentDefinition`.¨
